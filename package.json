@@ -1,0 +1,22 @@
+{
+  "name": "design-intelligence-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A local-first developer tool that understands both Figma designs and Flutter codebases",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=@design-intelligence/core --workspace=@design-intelligence/vscode-extension",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.125.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
