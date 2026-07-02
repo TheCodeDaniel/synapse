@@ -18,10 +18,9 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "ignoreDeprecations": "6.0", // Silence deprecation warnings
     "baseUrl": ".",
     "paths": {
-      "@design-intelligence/*": ["packages/*"]
+      "@design-intelligence/*": ["./packages/*"]
     }
   },
   "exclude": ["node_modules", "**/dist/**"]
