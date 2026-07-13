@@ -11,7 +11,7 @@
         "--disable-extensions",
         "--disable-workspace-trust"
       ],
-    //   "stopOnEntry": false,
+      //   "stopOnEntry": false,
       "sourceMaps": true,
       "outFiles": ["${workspaceFolder}/packages/vscode-extension/dist/**/*.js"],
       "cwd": "${workspaceFolder}"
