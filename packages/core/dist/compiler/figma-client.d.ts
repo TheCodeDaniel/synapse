@@ -3,12 +3,35 @@
  */
 import { Cache } from '../utils/cache';
 import { Logger } from '../utils/logger';
+/**
+ * Shape of the Figma REST API's `GET /v1/files/:key` response.
+ * The document tree lives at the top-level `document` field — there is no
+ * `doc` wrapper in the real API.
+ */
 export interface FigmaFileResponse {
-    doc: DocumentNode;
+    document: DocumentNode;
+    components: Record<string, FigmaComponentMetadata>;
+    componentSets: Record<string, FigmaComponentMetadata>;
+    schemaVersion: number;
+    styles: Record<string, FigmaStyleMetadata>;
     name: string;
     lastModified: string;
-    editorType: 'FIGMA' | 'DESKTOP' | 'SKETCH';
-    projectMode: boolean;
+    thumbnailUrl?: string;
+    version: string;
+    role: string;
+    editorType: 'figma' | 'figjam';
+    linkAccess: string;
+}
+export interface FigmaComponentMetadata {
+    key: string;
+    name: string;
+    description: string;
+    componentSetId?: string | null;
+}
+export interface FigmaStyleMetadata {
+    key: string;
+    name: string;
+    styleType: 'FILL' | 'TEXT' | 'EFFECT' | 'GRID';
 }
 export interface FigmaComponentResponse {
     id: string;
@@ -24,7 +47,7 @@ export interface FigmaVariableResponse {
     name: string;
     variableCollectionId: string;
     resolvedType: 'STRING' | 'BOOLEAN' | 'NUMBER' | 'COLOR';
-    valuesByMode: Record<string, string | number | [number, number, number, number]>;
+    valuesByMode: Record<string, string | number | boolean | [number, number, number, number]>;
     mode: string;
 }
 export interface FigmaVariableCollectionResponse {
@@ -36,12 +59,10 @@ export interface FigmaVariableCollectionResponse {
     }>;
 }
 export interface DocumentNode {
-    document: {
-        id: string;
-        name: string;
-        type: 'DOCUMENT';
-        children: FigmaPageNode[];
-    };
+    id: string;
+    name: string;
+    type: 'DOCUMENT';
+    children: FigmaPageNode[];
 }
 export interface FigmaPageNode {
     id: string;
@@ -72,49 +93,51 @@ export interface FigmaFrameNode {
         value: string;
     };
     clipsContent?: boolean;
-    backgroundColor?: string | null;
-    borderRadius?: number;
-    cornerRadius?: [number, number, number, number];
+    backgroundColor?: FigmaColor | null;
+    /** Uniform corner radius, as returned by the real API (not a 4-tuple). */
+    cornerRadius?: number;
+    /** Per-corner radii [topLeft, topRight, bottomRight, bottomLeft], only present when corners differ. */
+    rectangleCornerRadii?: [number, number, number, number];
+    strokeWeight?: number;
+    strokeAlign?: 'INSIDE' | 'OUTSIDE' | 'CENTER';
     children?: FigmaFrameNode[];
-    style?: FigmaStyle;
+    /**
+     * Only present on TEXT nodes. The Figma API calls this `TypeStyle` and it
+     * carries font/typography data — it is NOT a paint/fill style (those live
+     * in the top-level `fills`/`strokes`/`effects` fields on every node type).
+     */
+    style?: FigmaTextStyle;
+    characters?: string;
     effects?: FigmaEffect[];
     fills?: FigmaPaint[];
     strokes?: FigmaPaint[];
 }
-export interface FigmaStyle {
-    fills: FigmaPaint[];
-    strokes: FigmaPaint[];
-    strokeWeight: number;
-    strokeAlign: 'INSIDE' | 'OUTSIDE' | 'CENTER';
-    backgrounds?: FigmaPaint[];
-    effects: FigmaEffect[];
-    gridStyles: FigmaGridStyle[];
+export interface FigmaColor {
+    r: number;
+    g: number;
+    b: number;
+    a: number;
 }
 export interface FigmaPaint {
     type: 'SOLID' | 'GRADIENT_LINEAR' | 'GRADIENT_RADIAL' | 'IMAGE';
     visible?: boolean;
     opacity?: number;
-    color?: {
-        r: number;
-        g: number;
-        b: number;
-        a: number;
-    };
+    color?: FigmaColor;
     gradientHandlePositions?: Array<{
         x: number;
         y: number;
     }>;
+    gradientStops?: FigmaGradientStop[];
+}
+export interface FigmaGradientStop {
+    position: number;
+    color: FigmaColor;
 }
 export interface FigmaEffect {
     type: 'DROP_SHADOW' | 'INNER_SHADOW' | 'LAYER_BLUR' | 'BACKGROUND_BLUR';
     visible: boolean;
     radius: number;
-    color?: {
-        r: number;
-        g: number;
-        b: number;
-        a: number;
-    };
+    color?: FigmaColor;
     offset?: {
         x: number;
         y: number;
@@ -128,7 +151,7 @@ export interface FigmaGridStyle {
     visible?: boolean;
     stiffness?: number;
 }
-export interface TextStyle {
+export interface FigmaTextStyle {
     fontFamily: string;
     fontPostScriptName?: string;
     fontWeight: number;
@@ -137,17 +160,8 @@ export interface TextStyle {
     textAlignVertical: 'TOP' | 'CENTER' | 'BOTTOM';
     letterSpacing: number;
     lineHeightPx?: number;
+    lineHeightPercent?: number;
     textDecoration?: 'NONE' | 'UNDERLINE' | 'STRIKETHROUGH';
-}
-export interface FigmaTextStyle {
-    fontFamily: string;
-    fontPostScriptName?: string;
-    fontWeight: number;
-    fontSize: number;
-    textAlignHorizontal: string;
-    textAlignVertical: string;
-    letterSpacing: number;
-    lineHeightPx?: number;
 }
 export declare class FigmaClient {
     private axiosInstance;
@@ -162,5 +176,11 @@ export declare class FigmaClient {
     }>;
     getImage(fileKey: string, nodeIds: string, format?: 'png' | 'svg' | 'jpg', scale?: number): Promise<string>;
     invalidateCache(fileKey: string): void;
+    /**
+     * Extracts a safe, loggable message from a failed request. Never returns
+     * the raw error object — Axios errors embed the full request config,
+     * including the `X-Figma-Token` header, and must not be logged verbatim.
+     */
+    private describeError;
 }
 //# sourceMappingURL=figma-client.d.ts.map

@@ -4,7 +4,7 @@
  */
 
 import axios from 'axios';
-import { createHash, randomBytes } from 'crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from 'crypto';
 
 export interface FigmaTokens {
   accessToken: string;
@@ -27,14 +27,23 @@ export class FigmaOAuthManager {
   private config: FigmaOAuthConfig;
   private storageFn?: (key: string, value?: string) => void;
   private getStorageFn?: (key: string) => string | undefined;
+  private encryptionSecret?: string;
 
+  /**
+   * @param encryptionSecret Key material used to derive the AES-256-GCM key
+   *   that encrypts tokens at rest. Should come from a real secret store
+   *   (e.g. VS Code's `SecretStorage`) or an env var — never hardcoded or
+   *   committed. Falls back to `config.clientSecret` if omitted, since that
+   *   is still real secret material (just already used for OAuth).
+   */
   constructor(config: FigmaOAuthConfig, storage?: {
     set?: (key: string, value?: string) => void;
     get?: (key: string) => string | undefined;
-  }) {
+  }, encryptionSecret?: string) {
     this.config = config;
     this.storageFn = storage?.set;
     this.getStorageFn = storage?.get;
+    this.encryptionSecret = encryptionSecret;
     this.loadTokens();
   }
 
@@ -175,17 +184,35 @@ export class FigmaOAuthManager {
     }
   }
 
+  private deriveKey(salt: Buffer): Buffer {
+    const secret = this.encryptionSecret ?? this.config.clientSecret;
+    return scryptSync(secret, salt, 32);
+  }
+
   private encryptTokens(tokens: FigmaTokens): string {
     const json = JSON.stringify(tokens);
-    const key = randomBytes(32);
-    const iv = randomBytes(16);
-    // Simple encoding for prototype - in production use proper encryption
-    return `${key.toString('hex')}:${iv.toString('hex')}:${Buffer.from(json).toString('base64')}`;
+    const salt = randomBytes(16);
+    const iv = randomBytes(12);
+    const key = this.deriveKey(salt);
+
+    const cipher = createCipheriv('aes-256-gcm', key, iv);
+    const ciphertext = Buffer.concat([cipher.update(json, 'utf-8'), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+
+    return [salt, iv, authTag, ciphertext].map(buf => buf.toString('hex')).join(':');
   }
 
   private decryptTokens(encrypted: string): FigmaTokens {
-    const [key, iv, data] = encrypted.split(':');
-    const json = Buffer.from(data, 'base64').toString('utf-8');
+    const [saltHex, ivHex, authTagHex, ciphertextHex] = encrypted.split(':');
+    const salt = Buffer.from(saltHex, 'hex');
+    const iv = Buffer.from(ivHex, 'hex');
+    const authTag = Buffer.from(authTagHex, 'hex');
+    const ciphertext = Buffer.from(ciphertextHex, 'hex');
+    const key = this.deriveKey(salt);
+
+    const decipher = createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(authTag);
+    const json = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf-8');
     return JSON.parse(json) as FigmaTokens;
   }
 }

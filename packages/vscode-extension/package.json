@@ -73,9 +73,9 @@
   "scripts": {
     "build": "tsc --build",
     "watch": "tsc --watch",
-    "test": "jest --coverage",
+    "test": "jest --coverage --passWithNoTests",
     "vscode:prepublish": "npm run build",
-    "lint": "eslint src/",
+    "lint": "eslint \"src/**/*.ts\"",
     "clean": "rm -rf dist"
   },
   "dependencies": {

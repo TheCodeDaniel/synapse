@@ -20,7 +20,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.IncrementalSync = exports.ProjectIntegrator = exports.CodeValidator = exports.UIAgent = exports.PlanningEngine = exports.FlutterAnalyzer = exports.DesignCompiler = exports.FigmaClient = exports.validateFigmaUrl = exports.extractFigmaKey = exports.FigmaOAuthManager = exports.Cache = exports.createLogger = exports.LogLevel = exports.Logger = exports.loadOrCreateConfig = exports.createDefaultConfig = exports.ConfigLoader = void 0;
+exports.IncrementalSync = exports.ProjectIntegrator = exports.CodeValidator = exports.UIAgent = exports.PlanningEngine = exports.FlutterAnalyzer = exports.DesignCompiler = exports.FigmaClient = exports.validateFigmaUrl = exports.extractFigmaKey = exports.FigmaOAuthManager = exports.deserializeProjectGraph = exports.serializeProjectGraph = exports.deserializeDesignGraph = exports.serializeDesignGraph = exports.Cache = exports.createLogger = exports.LogLevel = exports.Logger = exports.loadOrCreateConfig = exports.createDefaultConfig = exports.ConfigLoader = void 0;
 // Types
 __exportStar(require("./types"), exports);
 // Config
@@ -34,6 +34,11 @@ Object.defineProperty(exports, "Logger", { enumerable: true, get: function () { 
 Object.defineProperty(exports, "LogLevel", { enumerable: true, get: function () { return utils_1.LogLevel; } });
 Object.defineProperty(exports, "createLogger", { enumerable: true, get: function () { return utils_1.createLogger; } });
 Object.defineProperty(exports, "Cache", { enumerable: true, get: function () { return utils_1.Cache; } });
+var utils_2 = require("./utils");
+Object.defineProperty(exports, "serializeDesignGraph", { enumerable: true, get: function () { return utils_2.serializeDesignGraph; } });
+Object.defineProperty(exports, "deserializeDesignGraph", { enumerable: true, get: function () { return utils_2.deserializeDesignGraph; } });
+Object.defineProperty(exports, "serializeProjectGraph", { enumerable: true, get: function () { return utils_2.serializeProjectGraph; } });
+Object.defineProperty(exports, "deserializeProjectGraph", { enumerable: true, get: function () { return utils_2.deserializeProjectGraph; } });
 // OAuth
 var oauth_1 = require("./oauth");
 Object.defineProperty(exports, "FigmaOAuthManager", { enumerable: true, get: function () { return oauth_1.FigmaOAuthManager; } });

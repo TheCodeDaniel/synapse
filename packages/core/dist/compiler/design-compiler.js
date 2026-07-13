@@ -12,7 +12,6 @@ class DesignCompiler {
         this.client = client;
     }
     async compile(fileKey) {
-        const startTime = Date.now();
         const fileData = await this.client.getFile(fileKey, 10);
         const variableData = await this.client.getVariables(fileKey);
         const pages = [];
@@ -20,7 +19,7 @@ class DesignCompiler {
         const variables = { colors: new Map(), scalars: new Map(), strings: new Map(), boolean: new Map(), composite: new Map() };
         const designTokens = this.extractDesignTokens(variableData);
         const assets = { images: new Map(), svgs: new Map(), others: new Map() };
-        for (const pageNode of fileData.doc.children) {
+        for (const pageNode of fileData.document.children) {
             if (pageNode.type === 'CANVAS' || pageNode.type === 'PAGE') {
                 const page = {
                     id: pageNode.id,
@@ -50,7 +49,13 @@ class DesignCompiler {
         };
     }
     compileNodes(nodes) {
-        return nodes.map(node => this.compileNode(node));
+        const compiled = [];
+        for (const node of nodes) {
+            const result = this.compileNode(node);
+            if (result)
+                compiled.push(result);
+        }
+        return compiled;
     }
     compileNode(node) {
         switch (node.type) {
@@ -71,6 +76,7 @@ class DesignCompiler {
             case 'STAR':
                 return this.compileShape(node);
             case 'GROUP':
+            case 'BOOLEAN_GROUP':
                 return this.compileGroup(node);
             case 'SECTION':
                 return this.compileSection(node);
@@ -103,9 +109,7 @@ class DesignCompiler {
             constraints: { vertical: 'stretch', horizontal: 'stretch' },
             clipsContent: node.clipsContent ?? false,
             backgroundColor: bgColor,
-            borderRadius: node.cornerRadius
-                ? { topLeft: node.cornerRadius[0], topRight: node.cornerRadius[1], bottomLeft: node.cornerRadius[2], bottomRight: node.cornerRadius[3] }
-                : { topLeft: node.borderRadius || 0, topRight: node.borderRadius || 0, bottomLeft: node.borderRadius || 0, bottomRight: node.borderRadius || 0 },
+            borderRadius: this.mapBorderRadius(node),
             children: this.compileNodes(node.children ?? []),
             style: this.compileStyle(node),
             attributes: {},
@@ -139,13 +143,33 @@ class DesignCompiler {
         };
     }
     compileComponentSet(node) {
+        const variantChildren = node.children ?? [];
+        const variantsMap = new Map();
+        const variants = [];
+        for (const child of variantChildren) {
+            if (child.type !== 'COMPONENT')
+                continue;
+            const variant = {
+                type: 'variant',
+                id: child.id,
+                name: child.name,
+                properties: this.parseVariantProperties(child.name),
+                children: this.compileNodes(child.children ?? []),
+                style: this.compileStyle(child),
+                constraints: { vertical: 'stretch', horizontal: 'stretch' },
+                borderRadius: this.mapBorderRadius(child),
+                backgroundColor: this.extractColor(child.fills ?? []),
+            };
+            variantsMap.set(child.id, variant);
+            variants.push(variant);
+        }
         const component = {
             id: node.id,
             name: node.name,
             description: '',
             type: 'component_set',
-            variants: new Map(),
-            defaultVariant: null,
+            variants: variantsMap,
+            defaultVariant: variants[0]?.id ?? null,
             properties: [],
             exports: [],
             createdAt: '',
@@ -157,12 +181,23 @@ class DesignCompiler {
             id: node.id,
             name: node.name,
             description: component.description,
-            variants: [],
+            variants,
             overrides: [],
             style: this.compileStyle(node),
             attributes: {},
             codeExtensions: [],
         };
+    }
+    /** Parses Figma's `"Prop1=Value1, Prop2=Value2"` variant-child naming convention. */
+    parseVariantProperties(variantName) {
+        return variantName
+            .split(',')
+            .map(part => part.trim())
+            .filter(Boolean)
+            .map(part => {
+            const [name, value] = part.split('=').map(s => s.trim());
+            return { name: name ?? part, value: value ?? '' };
+        });
     }
     compileInstance(node) {
         const componentId = node.id.replace(/:[0-9]+/i, '').split('/')[0];
@@ -175,8 +210,8 @@ class DesignCompiler {
             overrides: [],
             style: this.compileStyle(node),
             constraints: { vertical: 'stretch', horizontal: 'stretch' },
-            borderRadius: { topLeft: 0, topRight: 0, bottomLeft: 0, bottomRight: 0 },
-            backgroundColor: null,
+            borderRadius: this.mapBorderRadius(node),
+            backgroundColor: this.extractColor(node.fills ?? []),
         };
     }
     compileText(node) {
@@ -184,7 +219,7 @@ class DesignCompiler {
             type: 'text',
             id: node.id,
             name: node.name,
-            characters: '', // Figma API doesn't always include text content in the basic response
+            characters: node.characters ?? '',
             style: this.compileTextStyle(node),
         };
     }
@@ -196,8 +231,8 @@ class DesignCompiler {
             geometry: { path: '', winding: 'nonZero' },
             style: this.compileStyle(node),
             constraints: { vertical: 'stretch', horizontal: 'stretch' },
-            borderRadius: { topLeft: 0, topRight: 0, bottomLeft: 0, bottomRight: 0 },
-            backgroundColor: null,
+            borderRadius: this.mapBorderRadius(node),
+            backgroundColor: this.extractColor(node.fills ?? []),
         };
     }
     compileGroup(node) {
@@ -220,69 +255,66 @@ class DesignCompiler {
         return {
             fills: this.mapFills(fills),
             strokes: this.mapStrokes(strokes),
-            strokeWeight: strokes.length > 0 && strokes[0].visible !== false ? node.style?.strokeWeight ?? 1 : 0,
+            strokeWeight: strokes.length > 0 && strokes[0].visible !== false ? node.strokeWeight ?? 1 : 0,
             strokeAlign: 'center',
             backgrounds: this.mapFills(fills.filter(f => f.type === 'SOLID')),
-            effectSchedules: {},
+            effectSchedules: [],
             effects: this.mapEffects(effects),
             gridStyles: [],
         };
     }
     compileTextStyle(node) {
-        const textStyle = node.style?.typography ?? {};
+        const s = node.style;
         return {
-            fontFamily: textStyle.fontFamily || 'Inter',
-            fontPostScriptName: textStyle.fontPostScriptName,
-            fontWeight: textStyle.fontWeight || 400,
-            fontSize: textStyle.fontSize || 16,
-            textAlignHorizontal: (textStyle.textAlignHorizontal ?? 'LEFT'),
-            textAlignVertical: (textStyle.textAlignVertical ?? 'TOP'),
-            letterSpacing: textStyle.letterSpacing || 0,
-            lineHeightPx: textStyle.lineHeightPx,
-            lineHeightPercent: textStyle.lineHeightPercent,
+            fontFamily: s?.fontFamily || 'Inter',
+            fontPostScriptName: s?.fontPostScriptName,
+            fontWeight: s?.fontWeight || 400,
+            fontSize: s?.fontSize || 16,
+            textAlignHorizontal: this.mapTextAlignHorizontal(s?.textAlignHorizontal),
+            textAlignVertical: this.mapTextAlignVertical(s?.textAlignVertical),
+            letterSpacing: s?.letterSpacing || 0,
+            lineHeightPx: s?.lineHeightPx,
+            lineHeightPercent: s?.lineHeightPercent,
             lineHeightUnit: 'PIXELS',
-            textDecoration: (textStyle.textDecoration ?? 'NONE'),
+            textDecoration: this.mapTextDecoration(s?.textDecoration),
+            listBulletIndent: 0,
         };
     }
     mapFills(paints) {
-        return paints
-            .filter(p => p.visible !== false)
-            .map(p => {
+        const result = [];
+        for (const p of paints) {
+            if (p.visible === false)
+                continue;
             if (p.type === 'SOLID' && p.color) {
-                return { type: 'solid', color: this.normalizeColor(p.color), opacity: p.opacity ?? 1 };
+                result.push({ type: 'SOLID', color: this.normalizeColor(p.color), opacity: p.opacity ?? 1 });
             }
-            if (p.type === 'GRADIENT_LINEAR') {
-                return { type: 'gradient_linear', gradientStops: p.gradientStops ?? [], opacity: p.opacity ?? 1 };
+            else if (p.type === 'GRADIENT_LINEAR') {
+                result.push({
+                    type: 'GRADIENT_LINEAR',
+                    gradientStops: (p.gradientStops ?? []).map(stop => ({ position: stop.position, color: this.normalizeColor(stop.color) })),
+                    opacity: p.opacity ?? 1,
+                });
             }
-            return null;
-        })
-            .filter(Boolean);
+        }
+        return result;
     }
     mapStrokes(paints) {
         return paints
             .filter(p => p.visible !== false && p.type === 'SOLID' && p.color)
-            .map(p => ({ type: 'solid', color: this.normalizeColor(p.color), opacity: p.opacity ?? 1 }));
+            .map(p => ({ type: 'SOLID', color: this.normalizeColor(p.color), opacity: p.opacity ?? 1 }));
     }
     mapEffects(effects) {
         return effects
             .filter(e => e.visible !== false)
             .map(e => ({
-            type: this.mapEffectType(e.type),
+            type: e.type,
+            visible: e.visible,
             radius: e.radius,
             color: e.color ? this.normalizeColor(e.color) : { r: 0, g: 0, b: 0, a: 0.25 },
             offset: e.offset ?? { x: 0, y: 4 },
             spread: e.spread ?? 0,
             inner: e.inner || false,
         }));
-    }
-    mapEffectType(type) {
-        const mapping = {
-            DROP_SHADOW: 'drop_shadow',
-            INNER_SHADOW: 'inner_shadow',
-            LAYER_BLUR: 'layer_blur',
-            BACKGROUND_BLUR: 'background_blur',
-        };
-        return mapping[type] || type.toLowerCase();
     }
     extractColor(paints) {
         for (const paint of paints) {
@@ -298,6 +330,14 @@ class DesignCompiler {
             this.colorCache.set(key, `rgba(${Math.round(color.r * 255)}, ${Math.round(color.g * 255)}, ${Math.round(color.b * 255)}, ${color.a})`);
         }
         return { r: color.r, g: color.g, b: color.b, a: color.a };
+    }
+    mapBorderRadius(node) {
+        if (node.rectangleCornerRadii) {
+            const [topLeft, topRight, bottomRight, bottomLeft] = node.rectangleCornerRadii;
+            return { topLeft, topRight, bottomLeft, bottomRight };
+        }
+        const uniform = node.cornerRadius ?? 0;
+        return { topLeft: uniform, topRight: uniform, bottomLeft: uniform, bottomRight: uniform };
     }
     mapLayoutMode(mode) {
         switch (mode) {
@@ -315,6 +355,31 @@ class DesignCompiler {
         };
         return mapping[align ?? ''] ?? 'min';
     }
+    mapTextAlignHorizontal(align) {
+        const mapping = {
+            LEFT: 'left',
+            CENTER: 'center',
+            RIGHT: 'right',
+            JUSTIFIED: 'justify',
+        };
+        return mapping[align ?? ''] ?? 'left';
+    }
+    mapTextAlignVertical(align) {
+        const mapping = {
+            TOP: 'top',
+            CENTER: 'center',
+            BOTTOM: 'bottom',
+        };
+        return mapping[align ?? ''] ?? 'top';
+    }
+    mapTextDecoration(decoration) {
+        const mapping = {
+            NONE: 'none',
+            UNDERLINE: 'underline',
+            STRIKETHROUGH: 'strikethrough',
+        };
+        return mapping[decoration ?? ''] ?? 'none';
+    }
     extractDesignTokens(variableData) {
         const colors = [];
         const spacing = [];
@@ -322,13 +387,14 @@ class DesignCompiler {
         const shadows = [];
         const radii = [];
         const breakpoints = [];
-        if (variableData.variables) {
-            for (const entry of Object.values(variableData.variables)) {
-                const v = entry;
-                if (v.resolvedType === 'COLOR') {
-                    colors.push({ name: v.name ?? 'unknown', value: { r: 1, g: 0, b: 0, a: 1 }, type: 'color' });
-                }
-            }
+        for (const v of Object.values(variableData.variables ?? {})) {
+            if (v.resolvedType !== 'COLOR')
+                continue;
+            const value = Object.values(v.valuesByMode)[0];
+            if (!Array.isArray(value) || value.length !== 4)
+                continue;
+            const [r, g, b, a] = value;
+            colors.push({ name: v.name, value: { r, g, b, a }, type: 'color' });
         }
         return { colors, spacing, typography, breakpoints, shadows, borders: [], opacity: [], radii, zIndices: [] };
     }

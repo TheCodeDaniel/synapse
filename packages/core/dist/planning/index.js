@@ -130,6 +130,27 @@ class PlanningEngine {
         }
         return matches;
     }
+    /**
+     * Returns a node's children, uniformly across the DesignNode union.
+     * `ComponentNode` has no `children` field of its own — its content lives
+     * under `variants[].children` — so callers that only checked `.children`
+     * could never reach a component's actual design content.
+     */
+    getChildNodes(node) {
+        switch (node.type) {
+            case 'frame':
+            case 'group':
+            case 'instance':
+            case 'variant':
+            case 'document':
+            case 'slice':
+                return node.children;
+            case 'component':
+                return node.variants.flatMap(variant => variant.children);
+            default:
+                return [];
+        }
+    }
     collectComponentIds(nodes, visited) {
         for (const node of nodes) {
             if (!node)
@@ -139,9 +160,7 @@ class PlanningEngine {
                 if (name)
                     visited.add(name);
             }
-            if (node.children) {
-                this.collectComponentIds(node.children, visited);
-            }
+            this.collectComponentIds(this.getChildNodes(node), visited);
         }
     }
     normalizeName(name) {
@@ -205,7 +224,7 @@ class PlanningEngine {
     }
     collectAllComponentIds(nodes, visited, result) {
         for (const node of nodes) {
-            if (!node || !node.id)
+            if (!node || !('id' in node))
                 continue;
             const normalized = this.normalizeName(node.name);
             if (node.type === 'component' || node.type === 'instance') {
@@ -218,9 +237,7 @@ class PlanningEngine {
                     visited.add(normalized);
                 }
             }
-            if (node.children) {
-                this.collectAllComponentIds(node.children, visited, result);
-            }
+            this.collectAllComponentIds(this.getChildNodes(node), visited, result);
         }
     }
 }

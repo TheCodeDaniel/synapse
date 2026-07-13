@@ -1,0 +1,158 @@
+{
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "1:0",
+        "name": "Page 1",
+        "type": "CANVAS",
+        "children": [
+          {
+            "id": "1:1",
+            "name": "Screen",
+            "type": "FRAME",
+            "x": 0,
+            "y": 0,
+            "width": 375,
+            "height": 812,
+            "layoutMode": "VERTICAL",
+            "primaryAxisAlignItems": "MIN",
+            "counterAxisAlignItems": "CENTER",
+            "paddingLeft": 16,
+            "paddingRight": 16,
+            "paddingTop": 24,
+            "paddingBottom": 24,
+            "primaryAxisSpacing": 12,
+            "cornerRadius": 0,
+            "fills": [{ "type": "SOLID", "visible": true, "opacity": 1, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+            "strokes": [],
+            "effects": [],
+            "children": [
+              {
+                "id": "1:2",
+                "name": "Title",
+                "type": "TEXT",
+                "x": 16,
+                "y": 24,
+                "width": 200,
+                "height": 24,
+                "characters": "Welcome",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontWeight": 700,
+                  "fontSize": 20,
+                  "textAlignHorizontal": "LEFT",
+                  "textAlignVertical": "TOP",
+                  "letterSpacing": 0,
+                  "lineHeightPx": 24,
+                  "textDecoration": "NONE"
+                },
+                "fills": [{ "type": "SOLID", "visible": true, "opacity": 1, "color": { "r": 0, "g": 0, "b": 0, "a": 1 } }]
+              },
+              {
+                "id": "1:3",
+                "name": "Button",
+                "type": "COMPONENT_SET",
+                "x": 16,
+                "y": 60,
+                "width": 264,
+                "height": 40,
+                "children": [
+                  {
+                    "id": "1:4",
+                    "name": "State=Default",
+                    "type": "COMPONENT",
+                    "x": 16,
+                    "y": 60,
+                    "width": 120,
+                    "height": 40,
+                    "cornerRadius": 8,
+                    "fills": [{ "type": "SOLID", "visible": true, "opacity": 1, "color": { "r": 0.2, "g": 0.4, "b": 0.9, "a": 1 } }],
+                    "children": [
+                      {
+                        "id": "1:5",
+                        "name": "Label",
+                        "type": "TEXT",
+                        "x": 32,
+                        "y": 70,
+                        "width": 88,
+                        "height": 20,
+                        "characters": "Continue",
+                        "style": {
+                          "fontFamily": "Inter",
+                          "fontWeight": 600,
+                          "fontSize": 14,
+                          "textAlignHorizontal": "CENTER",
+                          "textAlignVertical": "CENTER",
+                          "letterSpacing": 0
+                        },
+                        "fills": [{ "type": "SOLID", "visible": true, "opacity": 1, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }]
+                      }
+                    ]
+                  },
+                  {
+                    "id": "1:6",
+                    "name": "State=Hover",
+                    "type": "COMPONENT",
+                    "x": 160,
+                    "y": 60,
+                    "width": 120,
+                    "height": 40,
+                    "cornerRadius": 8,
+                    "fills": [{ "type": "SOLID", "visible": true, "opacity": 1, "color": { "r": 0.15, "g": 0.35, "b": 0.85, "a": 1 } }],
+                    "children": [
+                      {
+                        "id": "1:7",
+                        "name": "Label",
+                        "type": "TEXT",
+                        "x": 176,
+                        "y": 70,
+                        "width": 88,
+                        "height": 20,
+                        "characters": "Continue",
+                        "style": {
+                          "fontFamily": "Inter",
+                          "fontWeight": 600,
+                          "fontSize": 14,
+                          "textAlignHorizontal": "CENTER",
+                          "textAlignVertical": "CENTER",
+                          "letterSpacing": 0
+                        },
+                        "fills": [{ "type": "SOLID", "visible": true, "opacity": 1, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "1:8",
+                "name": "Button Instance",
+                "type": "INSTANCE",
+                "x": 16,
+                "y": 120,
+                "width": 120,
+                "height": 40,
+                "cornerRadius": 8,
+                "fills": [{ "type": "SOLID", "visible": true, "opacity": 1, "color": { "r": 0.2, "g": 0.4, "b": 0.9, "a": 1 } }],
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "components": {},
+  "componentSets": {},
+  "schemaVersion": 0,
+  "styles": {},
+  "name": "Fixture File",
+  "lastModified": "2026-01-01T00:00:00Z",
+  "thumbnailUrl": "",
+  "version": "1",
+  "role": "owner",
+  "editorType": "figma",
+  "linkAccess": "org_view"
+}

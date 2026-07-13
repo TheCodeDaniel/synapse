@@ -27,11 +27,6 @@ class FigmaClient {
             return this.cache.get(cacheKey);
         }
         try {
-            const params = new URLSearchParams();
-            if (depth)
-                params.set('geometry', 'paths');
-            if (depth)
-                params.set('depth', String(depth));
             const endpoint = depth ? `/files/${fileKey}?geometry=paths&depth=${depth}` : `/files/${fileKey}`;
             const response = await this.axiosInstance.get(endpoint);
             const data = response.data;
@@ -41,7 +36,7 @@ class FigmaClient {
             return data;
         }
         catch (error) {
-            const message = axios_1.default.isAxiosError(error) ? `Figma API error: ${error.response?.data?.message ?? error.message}` : String(error);
+            const message = this.describeError(error);
             this.logger.error(`Failed to fetch Figma file: ${fileKey}`, message);
             throw new Error(message);
         }
@@ -64,7 +59,7 @@ class FigmaClient {
             return data.components;
         }
         catch (error) {
-            this.logger.error(`Failed to fetch components`, error);
+            this.logger.error(`Failed to fetch components`, this.describeError(error));
             return [];
         }
     }
@@ -74,7 +69,7 @@ class FigmaClient {
             return response.data;
         }
         catch (error) {
-            this.logger.error(`Failed to fetch variables`, error);
+            this.logger.error(`Failed to fetch variables`, this.describeError(error));
             return { variableCollections: {}, variables: {} };
         }
     }
@@ -86,7 +81,7 @@ class FigmaClient {
             return response.data.images[0];
         }
         catch (error) {
-            this.logger.error(`Failed to fetch image for nodes: ${nodeIds}`, error);
+            this.logger.error(`Failed to fetch image for nodes: ${nodeIds}`, this.describeError(error));
             throw new Error(`Figma image API error`);
         }
     }
@@ -96,6 +91,17 @@ class FigmaClient {
         const prefix = `figma_${fileKey}`;
         // Clear all known cache patterns for this file
         this.cache.delete(`${prefix}`);
+    }
+    /**
+     * Extracts a safe, loggable message from a failed request. Never returns
+     * the raw error object — Axios errors embed the full request config,
+     * including the `X-Figma-Token` header, and must not be logged verbatim.
+     */
+    describeError(error) {
+        if (axios_1.default.isAxiosError(error)) {
+            return `Figma API error: ${error.response?.data?.message ?? error.message}`;
+        }
+        return error instanceof Error ? error.message : String(error);
     }
 }
 exports.FigmaClient = FigmaClient;

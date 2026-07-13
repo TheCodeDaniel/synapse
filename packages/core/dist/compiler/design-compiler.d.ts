@@ -14,6 +14,8 @@ export declare class DesignCompiler {
     private compileFrame;
     private compileComponent;
     private compileComponentSet;
+    /** Parses Figma's `"Prop1=Value1, Prop2=Value2"` variant-child naming convention. */
+    private parseVariantProperties;
     private compileInstance;
     private compileText;
     private compileShape;
@@ -24,11 +26,14 @@ export declare class DesignCompiler {
     private mapFills;
     private mapStrokes;
     private mapEffects;
-    private mapEffectType;
     private extractColor;
     private normalizeColor;
+    private mapBorderRadius;
     private mapLayoutMode;
     private mapAlignment;
+    private mapTextAlignHorizontal;
+    private mapTextAlignVertical;
+    private mapTextDecoration;
     private extractDesignTokens;
 }
 //# sourceMappingURL=design-compiler.d.ts.map

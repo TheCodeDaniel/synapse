@@ -19,10 +19,19 @@ class FigmaOAuthManager {
     config;
     storageFn;
     getStorageFn;
-    constructor(config, storage) {
+    encryptionSecret;
+    /**
+     * @param encryptionSecret Key material used to derive the AES-256-GCM key
+     *   that encrypts tokens at rest. Should come from a real secret store
+     *   (e.g. VS Code's `SecretStorage`) or an env var — never hardcoded or
+     *   committed. Falls back to `config.clientSecret` if omitted, since that
+     *   is still real secret material (just already used for OAuth).
+     */
+    constructor(config, storage, encryptionSecret) {
         this.config = config;
         this.storageFn = storage?.set;
         this.getStorageFn = storage?.get;
+        this.encryptionSecret = encryptionSecret;
         this.loadTokens();
     }
     getAccessToken() {
@@ -134,16 +143,30 @@ class FigmaOAuthManager {
             this.tokens = undefined;
         }
     }
+    deriveKey(salt) {
+        const secret = this.encryptionSecret ?? this.config.clientSecret;
+        return (0, crypto_1.scryptSync)(secret, salt, 32);
+    }
     encryptTokens(tokens) {
         const json = JSON.stringify(tokens);
-        const key = (0, crypto_1.randomBytes)(32);
-        const iv = (0, crypto_1.randomBytes)(16);
-        // Simple encoding for prototype - in production use proper encryption
-        return `${key.toString('hex')}:${iv.toString('hex')}:${Buffer.from(json).toString('base64')}`;
+        const salt = (0, crypto_1.randomBytes)(16);
+        const iv = (0, crypto_1.randomBytes)(12);
+        const key = this.deriveKey(salt);
+        const cipher = (0, crypto_1.createCipheriv)('aes-256-gcm', key, iv);
+        const ciphertext = Buffer.concat([cipher.update(json, 'utf-8'), cipher.final()]);
+        const authTag = cipher.getAuthTag();
+        return [salt, iv, authTag, ciphertext].map(buf => buf.toString('hex')).join(':');
     }
     decryptTokens(encrypted) {
-        const [key, iv, data] = encrypted.split(':');
-        const json = Buffer.from(data, 'base64').toString('utf-8');
+        const [saltHex, ivHex, authTagHex, ciphertextHex] = encrypted.split(':');
+        const salt = Buffer.from(saltHex, 'hex');
+        const iv = Buffer.from(ivHex, 'hex');
+        const authTag = Buffer.from(authTagHex, 'hex');
+        const ciphertext = Buffer.from(ciphertextHex, 'hex');
+        const key = this.deriveKey(salt);
+        const decipher = (0, crypto_1.createDecipheriv)('aes-256-gcm', key, iv);
+        decipher.setAuthTag(authTag);
+        const json = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf-8');
         return JSON.parse(json);
     }
 }

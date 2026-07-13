@@ -5,6 +5,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import {
   DesignGraph,
+  DesignNode,
   ProjectGraph,
   ImplementationPlan,
   Task,
@@ -162,8 +163,30 @@ export class PlanningEngine {
     return matches;
   }
 
+  /**
+   * Returns a node's children, uniformly across the DesignNode union.
+   * `ComponentNode` has no `children` field of its own — its content lives
+   * under `variants[].children` — so callers that only checked `.children`
+   * could never reach a component's actual design content.
+   */
+  private getChildNodes(node: DesignNode): DesignNode[] {
+    switch (node.type) {
+      case 'frame':
+      case 'group':
+      case 'instance':
+      case 'variant':
+      case 'document':
+      case 'slice':
+        return node.children;
+      case 'component':
+        return node.variants.flatMap(variant => variant.children);
+      default:
+        return [];
+    }
+  }
+
   private collectComponentIds(
-    nodes: any[],
+    nodes: DesignNode[],
     visited: Set<string>
   ): void {
     for (const node of nodes) {
@@ -172,9 +195,7 @@ export class PlanningEngine {
         const name = this.normalizeName(node.name);
         if (name) visited.add(name);
       }
-      if (node.children) {
-        this.collectComponentIds(node.children, visited);
-      }
+      this.collectComponentIds(this.getChildNodes(node), visited);
     }
   }
 
@@ -255,12 +276,12 @@ export class PlanningEngine {
   }
 
   private collectAllComponentIds(
-    nodes: any[],
+    nodes: DesignNode[],
     visited: Set<string>,
     result: Array<{ name: string; suggestedPath: string; designNodeId: string }>
   ): void {
     for (const node of nodes) {
-      if (!node || !node.id) continue;
+      if (!node || !('id' in node)) continue;
 
       const normalized = this.normalizeName(node.name);
       if (node.type === 'component' || node.type === 'instance') {
@@ -274,9 +295,7 @@ export class PlanningEngine {
         }
       }
 
-      if (node.children) {
-        this.collectAllComponentIds(node.children, visited, result);
-      }
+      this.collectAllComponentIds(this.getChildNodes(node), visited, result);
     }
   }
 }

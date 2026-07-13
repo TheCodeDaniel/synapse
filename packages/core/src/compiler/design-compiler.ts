@@ -2,18 +2,24 @@
  * Design Compiler - Compiles Figma file data into a normalized Design Graph.
  */
 
-import { FigmaClient, FigmaFrameNode, FigmaPaint, FigmaEffect } from './figma-client';
+import { FigmaClient, FigmaFrameNode, FigmaPaint, FigmaEffect, FigmaVariableResponse, FigmaVariableCollectionResponse } from './figma-client';
 import {
   DesignGraph,
   DesignPage,
+  DesignNode,
   FrameNode,
   ComponentNode,
   VariantNode,
+  VariantProperty,
   InstanceNode,
   TextNode,
+  TextStyle,
   ShapeNode,
   GroupNode,
   ColorValue,
+  Paint,
+  Effect,
+  StyleReference,
   FigmaComponent,
   AssetRegistry,
   VariableRegistry,
@@ -26,6 +32,11 @@ import {
   BreakpointToken,
 } from '../types';
 
+interface VariableData {
+  variableCollections: Record<string, FigmaVariableCollectionResponse>;
+  variables: Record<string, FigmaVariableResponse>;
+}
+
 export class DesignCompiler {
   private client: FigmaClient;
   private colorCache = new Map<string, string>();
@@ -36,8 +47,6 @@ export class DesignCompiler {
   }
 
   async compile(fileKey: string): Promise<DesignGraph> {
-    const startTime = Date.now();
-
     const fileData = await this.client.getFile(fileKey, 10);
     const variableData = await this.client.getVariables(fileKey);
 
@@ -47,7 +56,7 @@ export class DesignCompiler {
     const designTokens = this.extractDesignTokens(variableData);
     const assets: AssetRegistry = { images: new Map(), svgs: new Map(), others: new Map() };
 
-    for (const pageNode of (fileData.doc as any).children) {
+    for (const pageNode of fileData.document.children) {
       if (pageNode.type === 'CANVAS' || pageNode.type === 'PAGE') {
         const page: DesignPage = {
           id: pageNode.id,
@@ -79,11 +88,16 @@ export class DesignCompiler {
     };
   }
 
-  private compileNodes(nodes: FigmaFrameNode[]): any[] {
-    return nodes.map(node => this.compileNode(node));
+  private compileNodes(nodes: FigmaFrameNode[]): DesignNode[] {
+    const compiled: DesignNode[] = [];
+    for (const node of nodes) {
+      const result = this.compileNode(node);
+      if (result) compiled.push(result);
+    }
+    return compiled;
   }
 
-  private compileNode(node: FigmaFrameNode): any {
+  private compileNode(node: FigmaFrameNode): DesignNode | null {
     switch (node.type) {
       case 'FRAME':
         return this.compileFrame(node);
@@ -102,6 +116,7 @@ export class DesignCompiler {
       case 'STAR':
         return this.compileShape(node);
       case 'GROUP':
+      case 'BOOLEAN_GROUP':
         return this.compileGroup(node);
       case 'SECTION':
         return this.compileSection(node);
@@ -136,9 +151,7 @@ export class DesignCompiler {
       constraints: { vertical: 'stretch', horizontal: 'stretch' },
       clipsContent: node.clipsContent ?? false,
       backgroundColor: bgColor,
-      borderRadius: node.cornerRadius
-        ? { topLeft: node.cornerRadius[0], topRight: node.cornerRadius[1], bottomLeft: node.cornerRadius[2], bottomRight: node.cornerRadius[3] }
-        : { topLeft: node.borderRadius || 0, topRight: node.borderRadius || 0, bottomLeft: node.borderRadius || 0, bottomRight: node.borderRadius || 0 },
+      borderRadius: this.mapBorderRadius(node),
       children: this.compileNodes(node.children ?? []),
       style: this.compileStyle(node),
       attributes: {},
@@ -176,13 +189,36 @@ export class DesignCompiler {
   }
 
   private compileComponentSet(node: FigmaFrameNode): ComponentNode {
+    const variantChildren = node.children ?? [];
+    const variantsMap = new Map<string, VariantNode>();
+    const variants: VariantNode[] = [];
+
+    for (const child of variantChildren) {
+      if (child.type !== 'COMPONENT') continue;
+
+      const variant: VariantNode = {
+        type: 'variant',
+        id: child.id,
+        name: child.name,
+        properties: this.parseVariantProperties(child.name),
+        children: this.compileNodes(child.children ?? []),
+        style: this.compileStyle(child),
+        constraints: { vertical: 'stretch', horizontal: 'stretch' },
+        borderRadius: this.mapBorderRadius(child),
+        backgroundColor: this.extractColor(child.fills ?? []),
+      };
+
+      variantsMap.set(child.id, variant);
+      variants.push(variant);
+    }
+
     const component: FigmaComponent = {
       id: node.id,
       name: node.name,
       description: '',
       type: 'component_set',
-      variants: new Map(),
-      defaultVariant: null,
+      variants: variantsMap,
+      defaultVariant: variants[0]?.id ?? null,
       properties: [],
       exports: [],
       createdAt: '',
@@ -196,12 +232,24 @@ export class DesignCompiler {
       id: node.id,
       name: node.name,
       description: component.description,
-      variants: [],
+      variants,
       overrides: [],
       style: this.compileStyle(node),
       attributes: {},
       codeExtensions: [],
     };
+  }
+
+  /** Parses Figma's `"Prop1=Value1, Prop2=Value2"` variant-child naming convention. */
+  private parseVariantProperties(variantName: string): VariantProperty[] {
+    return variantName
+      .split(',')
+      .map(part => part.trim())
+      .filter(Boolean)
+      .map(part => {
+        const [name, value] = part.split('=').map(s => s.trim());
+        return { name: name ?? part, value: value ?? '' };
+      });
   }
 
   private compileInstance(node: FigmaFrameNode): InstanceNode {
@@ -216,8 +264,8 @@ export class DesignCompiler {
       overrides: [],
       style: this.compileStyle(node),
       constraints: { vertical: 'stretch', horizontal: 'stretch' },
-      borderRadius: { topLeft: 0, topRight: 0, bottomLeft: 0, bottomRight: 0 },
-      backgroundColor: null,
+      borderRadius: this.mapBorderRadius(node),
+      backgroundColor: this.extractColor(node.fills ?? []),
     };
   }
 
@@ -226,7 +274,7 @@ export class DesignCompiler {
       type: 'text',
       id: node.id,
       name: node.name,
-      characters: '', // Figma API doesn't always include text content in the basic response
+      characters: node.characters ?? '',
       style: this.compileTextStyle(node),
     };
   }
@@ -239,8 +287,8 @@ export class DesignCompiler {
       geometry: { path: '', winding: 'nonZero' },
       style: this.compileStyle(node),
       constraints: { vertical: 'stretch', horizontal: 'stretch' },
-      borderRadius: { topLeft: 0, topRight: 0, bottomLeft: 0, bottomRight: 0 },
-      backgroundColor: null,
+      borderRadius: this.mapBorderRadius(node),
+      backgroundColor: this.extractColor(node.fills ?? []),
     };
   }
 
@@ -259,7 +307,7 @@ export class DesignCompiler {
     return this.compileFrame(node);
   }
 
-  private compileStyle(node: FigmaFrameNode): any {
+  private compileStyle(node: FigmaFrameNode): StyleReference {
     const fills = node.fills ?? [];
     const strokes = node.strokes ?? [];
     const effects = node.effects ?? [];
@@ -267,58 +315,62 @@ export class DesignCompiler {
     return {
       fills: this.mapFills(fills),
       strokes: this.mapStrokes(strokes),
-      strokeWeight: strokes.length > 0 && strokes[0].visible !== false ? (node as any).style?.strokeWeight ?? 1 : 0,
+      strokeWeight: strokes.length > 0 && strokes[0].visible !== false ? node.strokeWeight ?? 1 : 0,
       strokeAlign: 'center',
       backgrounds: this.mapFills(fills.filter(f => f.type === 'SOLID')),
-      effectSchedules: {},
+      effectSchedules: [],
       effects: this.mapEffects(effects),
       gridStyles: [],
     };
   }
 
-  private compileTextStyle(node: FigmaFrameNode): any {
-    const textStyle = (node as any).style?.typography ?? {};
+  private compileTextStyle(node: FigmaFrameNode): TextStyle {
+    const s = node.style;
     return {
-      fontFamily: textStyle.fontFamily || 'Inter',
-      fontPostScriptName: textStyle.fontPostScriptName,
-      fontWeight: textStyle.fontWeight || 400,
-      fontSize: textStyle.fontSize || 16,
-      textAlignHorizontal: (textStyle.textAlignHorizontal ?? 'LEFT') as any,
-      textAlignVertical: (textStyle.textAlignVertical ?? 'TOP') as any,
-      letterSpacing: textStyle.letterSpacing || 0,
-      lineHeightPx: textStyle.lineHeightPx,
-      lineHeightPercent: textStyle.lineHeightPercent,
+      fontFamily: s?.fontFamily || 'Inter',
+      fontPostScriptName: s?.fontPostScriptName,
+      fontWeight: s?.fontWeight || 400,
+      fontSize: s?.fontSize || 16,
+      textAlignHorizontal: this.mapTextAlignHorizontal(s?.textAlignHorizontal),
+      textAlignVertical: this.mapTextAlignVertical(s?.textAlignVertical),
+      letterSpacing: s?.letterSpacing || 0,
+      lineHeightPx: s?.lineHeightPx,
+      lineHeightPercent: s?.lineHeightPercent,
       lineHeightUnit: 'PIXELS',
-      textDecoration: (textStyle.textDecoration ?? 'NONE') as any,
+      textDecoration: this.mapTextDecoration(s?.textDecoration),
+      listBulletIndent: 0,
     };
   }
 
-  private mapFills(paints: FigmaPaint[]): any[] {
-    return paints
-      .filter(p => p.visible !== false)
-      .map(p => {
-        if (p.type === 'SOLID' && p.color) {
-          return { type: 'solid', color: this.normalizeColor(p.color), opacity: p.opacity ?? 1 };
-        }
-        if (p.type === 'GRADIENT_LINEAR') {
-          return { type: 'gradient_linear', gradientStops: (p as any).gradientStops ?? [], opacity: p.opacity ?? 1 };
-        }
-        return null;
-      })
-      .filter(Boolean);
+  private mapFills(paints: FigmaPaint[]): Paint[] {
+    const result: Paint[] = [];
+    for (const p of paints) {
+      if (p.visible === false) continue;
+      if (p.type === 'SOLID' && p.color) {
+        result.push({ type: 'SOLID', color: this.normalizeColor(p.color), opacity: p.opacity ?? 1 });
+      } else if (p.type === 'GRADIENT_LINEAR') {
+        result.push({
+          type: 'GRADIENT_LINEAR',
+          gradientStops: (p.gradientStops ?? []).map(stop => ({ position: stop.position, color: this.normalizeColor(stop.color) })),
+          opacity: p.opacity ?? 1,
+        });
+      }
+    }
+    return result;
   }
 
-  private mapStrokes(paints: FigmaPaint[]): any[] {
+  private mapStrokes(paints: FigmaPaint[]): Paint[] {
     return paints
       .filter(p => p.visible !== false && p.type === 'SOLID' && p.color)
-      .map(p => ({ type: 'solid', color: this.normalizeColor(p.color!), opacity: p.opacity ?? 1 }));
+      .map(p => ({ type: 'SOLID' as const, color: this.normalizeColor(p.color!), opacity: p.opacity ?? 1 }));
   }
 
-  private mapEffects(effects: FigmaEffect[]): any[] {
+  private mapEffects(effects: FigmaEffect[]): Effect[] {
     return effects
       .filter(e => e.visible !== false)
       .map(e => ({
-        type: this.mapEffectType(e.type),
+        type: e.type,
+        visible: e.visible,
         radius: e.radius,
         color: e.color ? this.normalizeColor(e.color) : { r: 0, g: 0, b: 0, a: 0.25 },
         offset: e.offset ?? { x: 0, y: 4 },
@@ -327,20 +379,10 @@ export class DesignCompiler {
       }));
   }
 
-  private mapEffectType(type: string): string {
-    const mapping: Record<string, string> = {
-      DROP_SHADOW: 'drop_shadow',
-      INNER_SHADOW: 'inner_shadow',
-      LAYER_BLUR: 'layer_blur',
-      BACKGROUND_BLUR: 'background_blur',
-    };
-    return mapping[type] || type.toLowerCase();
-  }
-
   private extractColor(paints: FigmaPaint[]): ColorValue | null {
     for (const paint of paints) {
       if (paint.type === 'SOLID' && paint.visible !== false && paint.color) {
-        return this.normalizeColor(paint.color!);
+        return this.normalizeColor(paint.color);
       }
     }
     return null;
@@ -354,6 +396,15 @@ export class DesignCompiler {
     }
 
     return { r: color.r, g: color.g, b: color.b, a: color.a };
+  }
+
+  private mapBorderRadius(node: FigmaFrameNode): { topLeft: number; topRight: number; bottomLeft: number; bottomRight: number } {
+    if (node.rectangleCornerRadii) {
+      const [topLeft, topRight, bottomRight, bottomLeft] = node.rectangleCornerRadii;
+      return { topLeft, topRight, bottomLeft, bottomRight };
+    }
+    const uniform = node.cornerRadius ?? 0;
+    return { topLeft: uniform, topRight: uniform, bottomLeft: uniform, bottomRight: uniform };
   }
 
   private mapLayoutMode(mode?: string): 'none' | 'horizontal' | 'vertical' {
@@ -374,7 +425,35 @@ export class DesignCompiler {
     return mapping[align ?? ''] ?? 'min';
   }
 
-  private extractDesignTokens(variableData: any): DesignTokenRegistry {
+  private mapTextAlignHorizontal(align?: string): 'left' | 'center' | 'right' | 'justify' {
+    const mapping: Record<string, 'left' | 'center' | 'right' | 'justify'> = {
+      LEFT: 'left',
+      CENTER: 'center',
+      RIGHT: 'right',
+      JUSTIFIED: 'justify',
+    };
+    return mapping[align ?? ''] ?? 'left';
+  }
+
+  private mapTextAlignVertical(align?: string): 'top' | 'center' | 'bottom' {
+    const mapping: Record<string, 'top' | 'center' | 'bottom'> = {
+      TOP: 'top',
+      CENTER: 'center',
+      BOTTOM: 'bottom',
+    };
+    return mapping[align ?? ''] ?? 'top';
+  }
+
+  private mapTextDecoration(decoration?: string): 'none' | 'underline' | 'strikethrough' {
+    const mapping: Record<string, 'none' | 'underline' | 'strikethrough'> = {
+      NONE: 'none',
+      UNDERLINE: 'underline',
+      STRIKETHROUGH: 'strikethrough',
+    };
+    return mapping[decoration ?? ''] ?? 'none';
+  }
+
+  private extractDesignTokens(variableData: VariableData): DesignTokenRegistry {
     const colors: ColorToken[] = [];
     const spacing: SpacingToken[] = [];
     const typography: TypographyToken[] = [];
@@ -382,13 +461,14 @@ export class DesignCompiler {
     const radii: RadiusToken[] = [];
     const breakpoints: BreakpointToken[] = [];
 
-    if (variableData.variables) {
-      for (const entry of Object.values(variableData.variables)) {
-        const v = entry as { resolvedType?: string; name?: string };
-        if (v.resolvedType === 'COLOR') {
-          colors.push({ name: v.name ?? 'unknown', value: { r: 1, g: 0, b: 0, a: 1 }, type: 'color' });
-        }
-      }
+    for (const v of Object.values(variableData.variables ?? {})) {
+      if (v.resolvedType !== 'COLOR') continue;
+
+      const value = Object.values(v.valuesByMode)[0];
+      if (!Array.isArray(value) || value.length !== 4) continue;
+
+      const [r, g, b, a] = value;
+      colors.push({ name: v.name, value: { r, g, b, a }, type: 'color' });
     }
 
     return { colors, spacing, typography, breakpoints, shadows, borders: [], opacity: [], radii, zIndices: [] };
