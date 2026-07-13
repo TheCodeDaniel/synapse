@@ -218,10 +218,14 @@ export class FigmaOAuthManager {
 }
 
 export function extractFigmaKey(url: string): string | null {
-  // Extract file key from various Figma URL formats
+  // Extract file key from various Figma URL formats. Figma has used several
+  // path prefixes over time — "/file/" is the legacy one; current "Copy
+  // link" from the Figma UI produces "/design/" for design files, plus
+  // "/proto/" (prototype presentation view), "/board/" (FigJam), and
+  // "/slides/" (Figma Slides) — all followed by the same file key shape.
   const patterns = [
-    /\/file\/([a-zA-Z0-9]+)/,       // /file/<key>/view/...
-    /\/s\/([a-zA-Z0-9]+)/,          // /s/<key>/...
+    /\/(?:file|design|proto|board|slides)\/([a-zA-Z0-9]+)/,
+    /\/s\/([a-zA-Z0-9]+)/,          // /s/<key>/... (shortened links)
     /\/api\/file\/([a-zA-Z0-9]+)/,  // /api/file/<key>...
     /key=([a-zA-Z0-9]+)/,           // ?key=<key>
   ];
