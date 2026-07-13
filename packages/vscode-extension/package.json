@@ -11,6 +11,24 @@
   },
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "design-intelligence-container",
+          "title": "Design Intelligence",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "design-intelligence-container": [
+        {
+          "type": "webview",
+          "id": "design-intelligence.sidebar",
+          "name": "Design Intelligence"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "design-intelligence.importFigmaFile",

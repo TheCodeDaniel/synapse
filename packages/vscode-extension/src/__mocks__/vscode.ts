@@ -94,6 +94,7 @@ export const window = {
   withProgress: jest.fn(async (_options: unknown, task: (progress: { report: (v: unknown) => void }) => Promise<unknown>) => {
     return task({ report: jest.fn() });
   }),
+  registerWebviewViewProvider: jest.fn(() => ({ dispose: jest.fn() })),
 };
 
 export const workspace = {
