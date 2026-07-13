@@ -6,7 +6,11 @@
       "type": "extensionHost",
       "request": "launch",
       "runtimeExecutable": "${execPath}",
-      "args": ["--disable-extensions", "--disable-workspace-trust"],
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-extension",
+        "--disable-extensions",
+        "--disable-workspace-trust"
+      ],
     //   "stopOnEntry": false,
       "sourceMaps": true,
       "outFiles": ["${workspaceFolder}/packages/vscode-extension/dist/**/*.js"],
