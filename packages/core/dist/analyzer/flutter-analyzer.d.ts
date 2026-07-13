@@ -1,7 +1,7 @@
 /**
  * Flutter Project Analyzer - Scans a Flutter project and generates a Project Graph.
  */
-import { ProjectGraph } from '../types';
+import { ProjectGraph } from "../types";
 export declare class FlutterAnalyzer {
     private rootPath;
     private logger?;

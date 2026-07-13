@@ -51,7 +51,7 @@ class FlutterAnalyzer {
             throw new Error(`Flutter project not found at ${this.rootPath}`);
         }
         const pubspecContent = this.readPubspec();
-        const libDir = path.join(this.rootPath, 'lib');
+        const libDir = path.join(this.rootPath, "lib");
         const hasLibDir = fs.existsSync(libDir);
         const widgets = await this.scanWidgets(libDir);
         const themes = this.analyzeThemes(libDir);
@@ -66,7 +66,7 @@ class FlutterAnalyzer {
         const architecture = this.analyzeArchitecture(libDir, widgets);
         return {
             id: `flutter_${Date.now()}`,
-            version: '1.0.0',
+            version: "1.0.0",
             projectName: pubspecContent.name ?? path.basename(this.rootPath),
             flutterSdkVersion: await this.getFlutterVersion(),
             dartSdkVersion: await this.getDartVersion(),
@@ -86,15 +86,15 @@ class FlutterAnalyzer {
         };
     }
     readPubspec() {
-        const pubspecPath = path.join(this.rootPath, 'pubspec.yaml');
+        const pubspecPath = path.join(this.rootPath, "pubspec.yaml");
         if (!fs.existsSync(pubspecPath))
             return {};
-        const content = fs.readFileSync(pubspecPath, 'utf-8');
+        const content = fs.readFileSync(pubspecPath, "utf-8");
         // Simple YAML parsing for pubspec (avoids external dependency)
         const result = {};
         let currentKey = null;
-        for (const line of content.split('\n')) {
-            if (!line.trim() || line.startsWith('#'))
+        for (const line of content.split("\n")) {
+            if (!line.trim() || line.startsWith("#"))
                 continue;
             const match = line.match(/^(\w[\w_-]*)\s*:\s*(.*)$/);
             if (match) {
@@ -102,7 +102,7 @@ class FlutterAnalyzer {
                 result[currentKey ?? key] = value?.trim();
                 currentKey = key;
             }
-            else if (line.startsWith('  - ')) {
+            else if (line.startsWith("  - ")) {
                 // Array item under current key
             }
         }
@@ -115,7 +115,7 @@ class FlutterAnalyzer {
         const dartFiles = this.findDartFiles(libDir);
         for (const file of dartFiles) {
             try {
-                const content = fs.readFileSync(file, 'utf-8');
+                const content = fs.readFileSync(file, "utf-8");
                 const widgetDefs = this.extractWidgets(content, file, libDir);
                 for (const w of widgetDefs) {
                     widgets.set(w.id, w);
@@ -134,7 +134,7 @@ class FlutterAnalyzer {
         const dartFiles = this.findDartFiles(libDir);
         for (const file of dartFiles) {
             try {
-                const content = fs.readFileSync(file, 'utf-8');
+                const content = fs.readFileSync(file, "utf-8");
                 const modelDefs = this.extractModels(content, file, libDir);
                 for (const m of modelDefs) {
                     models.set(m.id, m);
@@ -153,7 +153,7 @@ class FlutterAnalyzer {
         const dartFiles = this.findDartFiles(libDir);
         for (const file of dartFiles) {
             try {
-                const content = fs.readFileSync(file, 'utf-8');
+                const content = fs.readFileSync(file, "utf-8");
                 const serviceDefs = this.extractServices(content, file, libDir);
                 for (const s of serviceDefs) {
                     services.set(s.id, s);
@@ -172,7 +172,7 @@ class FlutterAnalyzer {
         const dartFiles = this.findDartFiles(libDir);
         for (const file of dartFiles) {
             try {
-                const content = fs.readFileSync(file, 'utf-8');
+                const content = fs.readFileSync(file, "utf-8");
                 const repoDefs = this.extractRepositories(content, file, libDir);
                 for (const r of repoDefs) {
                     repos.set(r.id, r);
@@ -192,7 +192,7 @@ class FlutterAnalyzer {
             if (item.isDirectory()) {
                 files.push(...this.findDartFiles(fullPath));
             }
-            else if (item.isFile() && item.name.endsWith('.dart')) {
+            else if (item.isFile() && item.name.endsWith(".dart")) {
                 files.push(fullPath);
             }
         }
@@ -200,16 +200,16 @@ class FlutterAnalyzer {
     }
     extractWidgets(content, filePath, libDir) {
         const widgets = [];
-        const lines = content.split('\n');
+        const lines = content.split("\n");
         for (const line of lines) {
             const statelessMatch = line.match(/class\s+(\w+)\s+extends\s+StatelessWidget/);
             if (statelessMatch) {
-                widgets.push(this.createWidgetDef(statelessMatch[1], filePath, libDir, 'stateless'));
+                widgets.push(this.createWidgetDef(statelessMatch[1], filePath, libDir, "stateless"));
                 continue;
             }
             const statefulMatch = line.match(/class\s+(\w+)\s+extends\s+StatefulWidget/);
             if (statefulMatch) {
-                widgets.push(this.createWidgetDef(statefulMatch[1], filePath, libDir, 'stateful'));
+                widgets.push(this.createWidgetDef(statefulMatch[1], filePath, libDir, "stateful"));
             }
         }
         return widgets;
@@ -222,7 +222,7 @@ class FlutterAnalyzer {
             filePath,
             relativePath,
             type,
-            extends: type === 'stateless' ? 'StatelessWidget' : 'StatefulWidget',
+            extends: type === "stateless" ? "StatelessWidget" : "StatefulWidget",
             parameters: [],
             hasChildren: false,
             childCount: 0,
@@ -232,10 +232,13 @@ class FlutterAnalyzer {
     }
     extractModels(content, filePath, libDir) {
         const models = [];
-        const lines = content.split('\n');
+        const lines = content.split("\n");
         for (const line of lines) {
             const match = line.match(/class\s+(\w+)\s*(extends|{)/);
-            if (match && !line.includes('Widget') && !line.includes('Bloc') && !line.includes('Provider')) {
+            if (match &&
+                !line.includes("Widget") &&
+                !line.includes("Bloc") &&
+                !line.includes("Provider")) {
                 const name = match[1];
                 models.push({
                     id: `model_${name.toLowerCase()}`,
@@ -243,11 +246,11 @@ class FlutterAnalyzer {
                     filePath,
                     relativePath: path.relative(libDir, filePath),
                     fields: [],
-                    toJsonMethod: content.includes('toJson'),
-                    fromJsonMethod: content.includes('fromJson') || content.includes('.from'),
-                    equalsAndHashCode: content.includes('operator ==') && content.includes('hashCode'),
+                    toJsonMethod: content.includes("toJson"),
+                    fromJsonMethod: content.includes("fromJson") || content.includes(".from"),
+                    equalsAndHashCode: content.includes("operator ==") && content.includes("hashCode"),
                     isSerializable: false,
-                    hasCopyWith: content.includes('copyWith'),
+                    hasCopyWith: content.includes("copyWith"),
                 });
             }
         }
@@ -255,18 +258,18 @@ class FlutterAnalyzer {
     }
     extractServices(content, filePath, libDir) {
         const services = [];
-        const lines = content.split('\n');
+        const lines = content.split("\n");
         for (const line of lines) {
             const match = line.match(/class\s+(\w+)(\s+implements|\s*{)/);
-            if (match && !line.includes('Widget') && !line.includes('Bloc')) {
+            if (match && !line.includes("Widget") && !line.includes("Bloc")) {
                 const name = match[1];
-                if (!name.startsWith('_')) {
+                if (!name.startsWith("_")) {
                     services.push({
                         id: `service_${name.toLowerCase()}`,
                         name,
                         filePath,
                         relativePath: path.relative(libDir, filePath),
-                        isAbstract: line.includes('abstract'),
+                        isAbstract: line.includes("abstract"),
                         methods: [],
                         dependencies: [],
                     });
@@ -277,18 +280,18 @@ class FlutterAnalyzer {
     }
     extractRepositories(content, filePath, libDir) {
         const repos = [];
-        const lines = content.split('\n');
+        const lines = content.split("\n");
         for (const line of lines) {
-            if (line.includes('Repository') || line.includes('repository')) {
+            if (line.includes("Repository") || line.includes("repository")) {
                 const match = line.match(/class\s+(\w+)/);
-                if (match && !line.includes('Widget')) {
+                if (match && !line.includes("Widget")) {
                     const name = match[1];
                     repos.push({
                         id: `repo_${name.toLowerCase()}`,
                         name,
                         filePath,
                         relativePath: path.relative(libDir, filePath),
-                        abstractClass: line.includes('abstract'),
+                        abstractClass: line.includes("abstract"),
                         implementsInterfaces: [],
                         methods: [],
                         dataSources: [],
@@ -307,33 +310,54 @@ class FlutterAnalyzer {
         const borders = [];
         const radii = [];
         if (!fs.existsSync(libDir)) {
-            return { colors, textStyles, breakpoints, spacing, shadows, borders, radii };
+            return {
+                colors,
+                textStyles,
+                breakpoints,
+                spacing,
+                shadows,
+                borders,
+                radii,
+            };
         }
         // Look for theme files
-        const themeFiles = ['theme.dart', 'app_theme.dart', 'colors.dart', 'typography.dart'];
+        const themeFiles = [
+            "theme.dart",
+            "app_theme.dart",
+            "colors.dart",
+            "typography.dart",
+        ];
         for (const themeFile of themeFiles) {
             let searchPath;
             if (fs.existsSync(path.join(libDir, themeFile))) {
                 searchPath = path.join(libDir, themeFile);
             }
-            else if (fs.existsSync(path.join(libDir, 'theme', themeFile))) {
-                searchPath = path.join(libDir, 'theme', themeFile);
+            else if (fs.existsSync(path.join(libDir, "theme", themeFile))) {
+                searchPath = path.join(libDir, "theme", themeFile);
             }
-            else if (fs.existsSync(path.join(libDir, 'shared', 'themes', themeFile))) {
-                searchPath = path.join(libDir, 'shared', 'themes', themeFile);
+            else if (fs.existsSync(path.join(libDir, "shared", "themes", themeFile))) {
+                searchPath = path.join(libDir, "shared", "themes", themeFile);
             }
             else {
                 continue;
             }
             try {
-                const content = fs.readFileSync(searchPath, 'utf-8');
+                const content = fs.readFileSync(searchPath, "utf-8");
                 this.extractThemeData(content, colors, textStyles);
             }
             catch {
                 // Skip
             }
         }
-        return { colors, textStyles, breakpoints, spacing, shadows, borders, radii };
+        return {
+            colors,
+            textStyles,
+            breakpoints,
+            spacing,
+            shadows,
+            borders,
+            radii,
+        };
     }
     extractThemeData(content, colors, textStyles) {
         const colorMatches = content.match(/Color\((?:0x[a-fA-F0-9]+|\d+)\)/g);
@@ -345,12 +369,19 @@ class FlutterAnalyzer {
         const textStyleMatches = content.match(/TextStyle\([^)]*\)/g);
         if (textStyleMatches) {
             for (const match of textStyleMatches) {
-                textStyles.set(`text_style_${textStyles.size}`, { flutterName: match.substring(0, 50) });
+                textStyles.set(`text_style_${textStyles.size}`, {
+                    flutterName: match.substring(0, 50),
+                });
             }
         }
     }
     analyzeRouting(libDir) {
-        const routeFiles = ['routes.dart', 'app_routes.dart', 'navigation.dart', 'go_router.dart'];
+        const routeFiles = [
+            "routes.dart",
+            "app_routes.dart",
+            "navigation.dart",
+            "go_router.dart",
+        ];
         let routesFile = null;
         for (const rf of routeFiles) {
             if (fs.existsSync(path.join(libDir, rf))) {
@@ -358,18 +389,23 @@ class FlutterAnalyzer {
                 break;
             }
         }
-        if (!routesFile && fs.existsSync(path.join(libDir, 'routes', 'app_routes.dart'))) {
-            routesFile = path.join(libDir, 'routes', 'app_routes.dart');
+        if (!routesFile &&
+            fs.existsSync(path.join(libDir, "routes", "app_routes.dart"))) {
+            routesFile = path.join(libDir, "routes", "app_routes.dart");
         }
-        const hasGoRouter = this.hasDependency('go_router');
+        const hasGoRouter = this.hasDependency("go_router");
         const routeDefinitions = [];
         if (routesFile) {
             try {
-                const content = fs.readFileSync(routesFile, 'utf-8');
+                const content = fs.readFileSync(routesFile, "utf-8");
                 const pathMatches = content.match(/['"]\/[\w/-]*['"]/g);
                 if (pathMatches) {
                     for (const pm of pathMatches) {
-                        routeDefinitions.push({ name: '', path: pm.replace(/'/g, ''), widgetType: '' });
+                        routeDefinitions.push({
+                            name: "",
+                            path: pm.replace(/'/g, ""),
+                            widgetType: "",
+                        });
                     }
                 }
             }
@@ -379,15 +415,20 @@ class FlutterAnalyzer {
         }
         return {
             hasGoRouter,
-            routesFilePath: routesFile ?? '',
+            routesFilePath: routesFile ?? "",
             routeDefinitions,
             hasTransitionAnimation: false,
         };
     }
     analyzeLocalization(libDir) {
-        const hasIntl = this.hasDependency('intl') || this.hasDependency('flutter_localizations');
+        const hasIntl = this.hasDependency("intl") || this.hasDependency("flutter_localizations");
         let localeFile = null;
-        for (const lf of ['l10n.dart', 'app_localizations.dart', 'app_en.arb', 'app_ar.arb']) {
+        for (const lf of [
+            "l10n.dart",
+            "app_localizations.dart",
+            "app_en.arb",
+            "app_ar.arb",
+        ]) {
             if (fs.existsSync(path.join(libDir, lf))) {
                 localeFile = path.join(libDir, lf);
                 break;
@@ -396,7 +437,7 @@ class FlutterAnalyzer {
         const supportedLocales = [];
         if (localeFile) {
             try {
-                const content = fs.readFileSync(localeFile, 'utf-8');
+                const content = fs.readFileSync(localeFile, "utf-8");
                 const localeMatches = content.match(/Locale\(['"](\w+)['"]/g);
                 if (localeMatches) {
                     for (const m of localeMatches) {
@@ -420,38 +461,38 @@ class FlutterAnalyzer {
         };
     }
     readDependencies() {
-        const pubspecPath = path.join(this.rootPath, 'pubspec.yaml');
+        const pubspecPath = path.join(this.rootPath, "pubspec.yaml");
         if (!fs.existsSync(pubspecPath)) {
             return {
-                pubspecPath: '',
+                pubspecPath: "",
                 dependencies: {},
                 devDependencies: {},
-                flutterSdk: '',
+                flutterSdk: "",
                 keyPackages: [],
             };
         }
-        const content = fs.readFileSync(pubspecPath, 'utf-8');
+        const content = fs.readFileSync(pubspecPath, "utf-8");
         const deps = {};
         const devDeps = {};
         let section = null;
-        for (const line of content.split('\n')) {
+        for (const line of content.split("\n")) {
             const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#'))
+            if (!trimmed || trimmed.startsWith("#"))
                 continue;
-            if (trimmed === 'dependencies:') {
-                section = 'dependencies';
+            if (trimmed === "dependencies:") {
+                section = "dependencies";
                 continue;
             }
-            if (trimmed === 'dev_dependencies:') {
-                section = 'dev_dependencies';
+            if (trimmed === "dev_dependencies:") {
+                section = "dev_dependencies";
                 continue;
             }
             const depMatch = line.match(/^\s+(\w[\w_-]*):\s*(.*)$/);
             if (depMatch) {
                 const [_, name, version] = depMatch;
-                if (section === 'dependencies')
+                if (section === "dependencies")
                     deps[name] = version.trim();
-                else if (section === 'dev_dependencies')
+                else if (section === "dev_dependencies")
                     devDeps[name] = version.trim();
             }
         }
@@ -459,8 +500,8 @@ class FlutterAnalyzer {
             pubspecPath,
             dependencies: deps,
             devDependencies: devDeps,
-            flutterSdk: '',
-            keyPackages: Object.keys(deps).filter(d => ['flutter_bloc', 'bloc', 'riverpod', 'get_it', 'dio', 'go_router'].some(k => d.includes(k))),
+            flutterSdk: "",
+            keyPackages: Object.keys(deps).filter((d) => ["flutter_bloc", "bloc", "riverpod", "get_it", "dio", "go_router"].some((k) => d.includes(k))),
         };
     }
     scanAssets(pubspecContent) {
@@ -468,12 +509,12 @@ class FlutterAnalyzer {
     }
     detectConventions(widgets, libDir) {
         const namingConvention = {
-            files: 'camelCase',
-            classes: 'PascalCase',
-            variables: 'camelCase',
-            constants: 'UPPER_SNAKE_CASE',
-            methods: 'camelCase',
-            folders: 'camelCase',
+            files: "camelCase",
+            classes: "PascalCase",
+            variables: "camelCase",
+            constants: "UPPER_SNAKE_CASE",
+            methods: "camelCase",
+            folders: "camelCase",
         };
         const codeStyle = {
             trailingCommas: true,
@@ -492,19 +533,20 @@ class FlutterAnalyzer {
         const fileStructure = {
             singleWidgetPerFile: true,
             partFiles: false,
-            barrelExports: fs.existsSync(path.join(libDir, 'exports.dart')),
+            barrelExports: fs.existsSync(path.join(libDir, "exports.dart")),
             indexFiles: false,
         };
         return { namingConvention, importOrdering, fileStructure, codeStyle };
     }
     analyzeArchitecture(libDir, widgets) {
-        const hasCleanArch = fs.existsSync(path.join(libDir, 'src')) ||
-            (fs.existsSync(path.join(libDir, 'features')) && fs.existsSync(path.join(libDir, 'shared')));
+        const hasCleanArch = fs.existsSync(path.join(libDir, "src")) ||
+            (fs.existsSync(path.join(libDir, "features")) &&
+                fs.existsSync(path.join(libDir, "shared")));
         return {
-            pattern: hasCleanArch ? 'clean_architecture' : 'feature_folder',
+            pattern: hasCleanArch ? "clean_architecture" : "feature_folder",
             folders: this.detectFolderStructure(libDir),
-            hasTestFolder: fs.existsSync(path.join(this.rootPath, 'test')),
-            hasIntegrationTest: fs.existsSync(path.join(this.rootPath, 'integration_test')),
+            hasTestFolder: fs.existsSync(path.join(this.rootPath, "test")),
+            hasIntegrationTest: fs.existsSync(path.join(this.rootPath, "integration_test")),
         };
     }
     detectFolderStructure(libDir) {
@@ -513,14 +555,14 @@ class FlutterAnalyzer {
             lib: libDir,
             features: {},
             shared: {},
-            assets: '',
-            locales: '',
-            config: '',
+            assets: "",
+            locales: "",
+            config: "",
         };
     }
     hasDependency(name) {
         try {
-            const content = fs.readFileSync(path.join(this.rootPath, 'pubspec.yaml'), 'utf-8');
+            const content = fs.readFileSync(path.join(this.rootPath, "pubspec.yaml"), "utf-8");
             return content.includes(`${name}:`);
         }
         catch {
@@ -529,22 +571,20 @@ class FlutterAnalyzer {
     }
     async getFlutterVersion() {
         try {
-            const { execSync } = require('child_process');
-            return execSync('flutter --version', { encoding: 'utf-8' })
-                .match(/Flutter (\d+\.\d+\.\d+)/)?.[1] ?? 'unknown';
+            const { execSync } = require("child_process");
+            return (execSync("flutter --version", { encoding: "utf-8" }).match(/Flutter (\d+\.\d+\.\d+)/)?.[1] ?? "unknown");
         }
         catch {
-            return 'unknown';
+            return "unknown";
         }
     }
     async getDartVersion() {
         try {
-            const { execSync } = require('child_process');
-            return execSync('dart --version', { encoding: 'utf-8' })
-                .match(/Dart version (\d+\.\d+\.\d+)/)?.[1] ?? 'unknown';
+            const { execSync } = require("child_process");
+            return (execSync("dart --version", { encoding: "utf-8" }).match(/Dart version (\d+\.\d+\.\d+)/)?.[1] ?? "unknown");
         }
         catch {
-            return 'unknown';
+            return "unknown";
         }
     }
 }

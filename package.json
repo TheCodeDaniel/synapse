@@ -17,6 +17,7 @@
     "typescript": "^5.4.0"
   },
   "engines": {
+    "vscode": "^1.86.0",
     "node": ">=18.0.0"
   }
 }
