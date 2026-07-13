@@ -4,10 +4,13 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UIAgent = void 0;
+const providers_1 = require("./providers");
 class UIAgent {
     config;
-    constructor(config) {
+    provider;
+    constructor(config, provider) {
         this.config = config;
+        this.provider = provider ?? (0, providers_1.createProvider)(config);
     }
     async generate(task, designGraph, projectGraph, plan) {
         try {
@@ -84,40 +87,56 @@ class UIAgent {
     getDesignContext(task, designGraph) {
         if (!task.designNodeId)
             return '';
-        const searchNodes = (nodes, depth = 0) => {
+        const searchNodes = (nodes) => {
             for (const node of nodes) {
                 if (node?.id === task.designNodeId)
                     return node;
-                if (node?.children) {
-                    const found = searchNodes(node.children, depth + 1);
-                    if (found)
-                        return found;
-                }
+                const found = searchNodes(this.getChildNodes(node));
+                if (found)
+                    return found;
             }
             return null;
         };
         for (const page of designGraph.pages) {
-            const node = searchNodes([page]);
+            const node = searchNodes(page.children);
             if (node) {
-                return `## Design Context\nFound in page: ${page.name}\nNode type: ${node.type}\nLayout mode: ${node.layoutMode || 'none'}`;
+                const layoutMode = 'layoutMode' in node ? node.layoutMode : 'none';
+                return `## Design Context\nFound in page: ${page.name}\nNode type: ${node.type}\nLayout mode: ${layoutMode}`;
             }
         }
         return '';
     }
+    /**
+     * Returns a node's children, uniformly across the DesignNode union.
+     * `ComponentNode` has no `children` field — its content lives under
+     * `variants[].children` — so a naive `.children` walk can never find a
+     * design node nested inside a component's variants.
+     */
+    getChildNodes(node) {
+        switch (node.type) {
+            case 'frame':
+            case 'group':
+            case 'instance':
+            case 'variant':
+            case 'document':
+            case 'slice':
+                return node.children;
+            case 'component':
+                return node.variants.flatMap(variant => variant.children);
+            default:
+                return [];
+        }
+    }
     async callModel(prompt) {
-        // Placeholder for actual LLM API integration
-        // In production, this would call the configured AI provider
-        const baseUrl = this.config.baseUrl ?? getDefaultBaseUrl(this.config.provider);
-        // This is a stub - real implementation would use axios/fetch
-        throw new Error('LLM integration not implemented in prototype');
+        const result = await this.provider.complete(prompt, {
+            temperature: this.config.temperature,
+            maxTokens: this.config.maxTokens,
+        });
+        if (!result.ok) {
+            throw new Error(result.error.message);
+        }
+        return result.value;
     }
 }
 exports.UIAgent = UIAgent;
-function getDefaultBaseUrl(provider) {
-    switch (provider) {
-        case 'openai': return 'https://api.openai.com/v1';
-        case 'anthropic': return 'https://api.anthropic.com';
-        default: throw new Error(`Unknown provider: ${provider}`);
-    }
-}
 //# sourceMappingURL=index.js.map

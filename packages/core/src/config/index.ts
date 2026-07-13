@@ -42,6 +42,22 @@ interface PartialLogging {
   filePath?: string;
 }
 
+/**
+ * Never store real API keys in `di.config.json` or the checked-in default
+ * config — they're resolved from the environment when `ai.apiKey` is left
+ * blank, so a project can be configured without any secret touching disk.
+ */
+function resolveApiKeyFromEnv(provider: 'openai' | 'anthropic' | 'custom'): string {
+  switch (provider) {
+    case 'anthropic':
+      return process.env.ANTHROPIC_API_KEY ?? '';
+    case 'openai':
+      return process.env.OPENAI_API_KEY ?? '';
+    case 'custom':
+      return process.env.DI_CUSTOM_API_KEY ?? '';
+  }
+}
+
 const DEFAULT_CONFIG = {
   projectName: '',
   figma: {
@@ -129,8 +145,10 @@ export class ConfigLoader {
       errors.push(`Flutter project path does not exist: ${this.config.flutter.projectPath}`);
     }
 
-    if (this.config.ai.provider === 'openai' && !this.config.ai.apiKey) {
-      errors.push('OpenAI API key is required');
+    if (!this.config.ai.apiKey) {
+      errors.push(
+        `${this.config.ai.provider} API key is required (set ai.apiKey, or the ANTHROPIC_API_KEY/OPENAI_API_KEY/DI_CUSTOM_API_KEY environment variable)`
+      );
     }
 
     if (!this.config.projectName?.trim()) {
@@ -144,6 +162,9 @@ export class ConfigLoader {
     const figma = { ...DEFAULT_CONFIG.figma, ...(overrides?.figma ?? {}) };
     const flutter = { ...DEFAULT_CONFIG.flutter, ...(overrides?.flutter ?? {}) };
     const ai = { ...DEFAULT_CONFIG.ai, ...(overrides?.ai ?? {}) };
+    if (!ai.apiKey && ai.provider) {
+      ai.apiKey = resolveApiKeyFromEnv(ai.provider);
+    }
     const storage = { ...DEFAULT_CONFIG.storage, ...(overrides?.storage ?? {}) };
     const logging = { ...DEFAULT_CONFIG.logging, ...(overrides?.logging ?? {}) };
 
@@ -159,14 +180,13 @@ export class ConfigLoader {
 }
 
 export function createDefaultConfig(projectName: string): CoreConfig {
-  return JSON.parse(JSON.stringify({
-    ...DEFAULT_CONFIG,
+  // Goes through ConfigLoader.buildConfig() (rather than a raw JSON
+  // round-trip of DEFAULT_CONFIG) so a freshly created config still picks up
+  // an API key from the environment instead of always starting blank.
+  return new ConfigLoader({
     projectName,
-    storage: {
-      ...DEFAULT_CONFIG.storage!,
-      path: path.join(os.homedir(), '.design-intelligence', projectName),
-    },
-  })) as CoreConfig;
+    storage: { type: 'filesystem', path: path.join(os.homedir(), '.design-intelligence', projectName) },
+  }).getConfig();
 }
 
 export function loadOrCreateConfig(projectPath: string): CoreConfig {

@@ -20,7 +20,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.IncrementalSync = exports.ProjectIntegrator = exports.CodeValidator = exports.UIAgent = exports.PlanningEngine = exports.FlutterAnalyzer = exports.DesignCompiler = exports.FigmaClient = exports.validateFigmaUrl = exports.extractFigmaKey = exports.FigmaOAuthManager = exports.deserializeProjectGraph = exports.serializeProjectGraph = exports.deserializeDesignGraph = exports.serializeDesignGraph = exports.Cache = exports.createLogger = exports.LogLevel = exports.Logger = exports.loadOrCreateConfig = exports.createDefaultConfig = exports.ConfigLoader = void 0;
+exports.DesignIntelligenceError = exports.createError = exports.okAsync = exports.err = exports.ok = exports.ErrorCode = exports.IncrementalSync = exports.ProjectIntegrator = exports.CodeValidator = exports.createProvider = exports.CustomProvider = exports.OpenAIProvider = exports.AnthropicProvider = exports.UIAgent = exports.PlanningEngine = exports.FlutterAnalyzer = exports.DesignCompiler = exports.FigmaClient = exports.validateFigmaUrl = exports.extractFigmaKey = exports.FigmaOAuthManager = exports.deserializeProjectGraph = exports.serializeProjectGraph = exports.deserializeDesignGraph = exports.serializeDesignGraph = exports.Cache = exports.createLogger = exports.LogLevel = exports.Logger = exports.loadOrCreateConfig = exports.createDefaultConfig = exports.ConfigLoader = void 0;
 // Types
 __exportStar(require("./types"), exports);
 // Config
@@ -57,6 +57,11 @@ Object.defineProperty(exports, "PlanningEngine", { enumerable: true, get: functi
 // UI Agent
 var agent_1 = require("./agent");
 Object.defineProperty(exports, "UIAgent", { enumerable: true, get: function () { return agent_1.UIAgent; } });
+var providers_1 = require("./agent/providers");
+Object.defineProperty(exports, "AnthropicProvider", { enumerable: true, get: function () { return providers_1.AnthropicProvider; } });
+Object.defineProperty(exports, "OpenAIProvider", { enumerable: true, get: function () { return providers_1.OpenAIProvider; } });
+Object.defineProperty(exports, "CustomProvider", { enumerable: true, get: function () { return providers_1.CustomProvider; } });
+Object.defineProperty(exports, "createProvider", { enumerable: true, get: function () { return providers_1.createProvider; } });
 // Validation
 var validation_1 = require("./validation");
 Object.defineProperty(exports, "CodeValidator", { enumerable: true, get: function () { return validation_1.CodeValidator; } });
@@ -66,4 +71,11 @@ Object.defineProperty(exports, "ProjectIntegrator", { enumerable: true, get: fun
 // Sync
 var sync_1 = require("./sync");
 Object.defineProperty(exports, "IncrementalSync", { enumerable: true, get: function () { return sync_1.IncrementalSync; } });
+var types_1 = require("./types");
+Object.defineProperty(exports, "ErrorCode", { enumerable: true, get: function () { return types_1.ErrorCode; } });
+Object.defineProperty(exports, "ok", { enumerable: true, get: function () { return types_1.ok; } });
+Object.defineProperty(exports, "err", { enumerable: true, get: function () { return types_1.err; } });
+Object.defineProperty(exports, "okAsync", { enumerable: true, get: function () { return types_1.okAsync; } });
+Object.defineProperty(exports, "createError", { enumerable: true, get: function () { return types_1.createError; } });
+Object.defineProperty(exports, "DesignIntelligenceError", { enumerable: true, get: function () { return types_1.DesignIntelligenceError; } });
 //# sourceMappingURL=index.js.map

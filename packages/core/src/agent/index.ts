@@ -2,7 +2,8 @@
  * UI Agent - Generates Flutter UI code based on implementation plans.
  */
 
-import { ImplementationPlan, Task, DesignGraph, ProjectGraph } from '../types';
+import { AIConfig, DesignGraph, DesignNode, ImplementationPlan, ProjectGraph, Task } from '../types';
+import { createProvider, LLMProvider } from './providers';
 
 export interface GenerationResult {
   taskId: string;
@@ -12,20 +13,13 @@ export interface GenerationResult {
   error?: string;
 }
 
-interface AgentConfig {
-  provider: 'openai' | 'anthropic' | 'custom';
-  model: string;
-  apiKey: string;
-  temperature: number;
-  maxTokens: number;
-  baseUrl?: string;
-}
-
 export class UIAgent {
-  private config: AgentConfig;
+  private config: AIConfig;
+  private provider: LLMProvider;
 
-  constructor(config: AgentConfig) {
+  constructor(config: AIConfig, provider?: LLMProvider) {
     this.config = config;
+    this.provider = provider ?? createProvider(config);
   }
 
   async generate(
@@ -126,40 +120,58 @@ export class UIAgent {
   private getDesignContext(task: Task, designGraph: DesignGraph): string {
     if (!task.designNodeId) return '';
 
-    const searchNodes = (nodes: any[], depth = 0): any | null => {
+    const searchNodes = (nodes: DesignNode[]): DesignNode | null => {
       for (const node of nodes) {
         if (node?.id === task.designNodeId) return node;
-        if (node?.children) {
-          const found = searchNodes(node.children, depth + 1);
-          if (found) return found;
-        }
+        const found = searchNodes(this.getChildNodes(node));
+        if (found) return found;
       }
       return null;
     };
 
     for (const page of designGraph.pages) {
-      const node = searchNodes([page]);
+      const node = searchNodes(page.children);
       if (node) {
-        return `## Design Context\nFound in page: ${page.name}\nNode type: ${node.type}\nLayout mode: ${node.layoutMode || 'none'}`;
+        const layoutMode = 'layoutMode' in node ? node.layoutMode : 'none';
+        return `## Design Context\nFound in page: ${page.name}\nNode type: ${node.type}\nLayout mode: ${layoutMode}`;
       }
     }
 
     return '';
   }
 
-  private async callModel(prompt: string): Promise<string> {
-    // Placeholder for actual LLM API integration
-    // In production, this would call the configured AI provider
-    const baseUrl = this.config.baseUrl ?? getDefaultBaseUrl(this.config.provider);
-    // This is a stub - real implementation would use axios/fetch
-    throw new Error('LLM integration not implemented in prototype');
+  /**
+   * Returns a node's children, uniformly across the DesignNode union.
+   * `ComponentNode` has no `children` field — its content lives under
+   * `variants[].children` — so a naive `.children` walk can never find a
+   * design node nested inside a component's variants.
+   */
+  private getChildNodes(node: DesignNode): DesignNode[] {
+    switch (node.type) {
+      case 'frame':
+      case 'group':
+      case 'instance':
+      case 'variant':
+      case 'document':
+      case 'slice':
+        return node.children;
+      case 'component':
+        return node.variants.flatMap(variant => variant.children);
+      default:
+        return [];
+    }
   }
-}
 
-function getDefaultBaseUrl(provider: string): string {
-  switch (provider) {
-    case 'openai': return 'https://api.openai.com/v1';
-    case 'anthropic': return 'https://api.anthropic.com';
-    default: throw new Error(`Unknown provider: ${provider}`);
+  private async callModel(prompt: string): Promise<string> {
+    const result = await this.provider.complete(prompt, {
+      temperature: this.config.temperature,
+      maxTokens: this.config.maxTokens,
+    });
+
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+
+    return result.value;
   }
 }

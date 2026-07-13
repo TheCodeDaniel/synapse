@@ -7,6 +7,10 @@ module.exports = {
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.spec.json' }],
   },
+  // Reset jest.fn() call history between tests automatically — without this,
+  // an `expect(mock).not.toHaveBeenCalled()` in one test can fail because of
+  // a call recorded by an earlier test in the same file.
+  clearMocks: true,
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/index.ts',

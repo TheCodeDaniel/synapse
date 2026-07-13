@@ -43,6 +43,21 @@ exports.loadOrCreateConfig = loadOrCreateConfig;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const os = __importStar(require("os"));
+/**
+ * Never store real API keys in `di.config.json` or the checked-in default
+ * config — they're resolved from the environment when `ai.apiKey` is left
+ * blank, so a project can be configured without any secret touching disk.
+ */
+function resolveApiKeyFromEnv(provider) {
+    switch (provider) {
+        case 'anthropic':
+            return process.env.ANTHROPIC_API_KEY ?? '';
+        case 'openai':
+            return process.env.OPENAI_API_KEY ?? '';
+        case 'custom':
+            return process.env.DI_CUSTOM_API_KEY ?? '';
+    }
+}
 const DEFAULT_CONFIG = {
     projectName: '',
     figma: {
@@ -119,8 +134,8 @@ class ConfigLoader {
         else if (!fs.existsSync(this.config.flutter.projectPath)) {
             errors.push(`Flutter project path does not exist: ${this.config.flutter.projectPath}`);
         }
-        if (this.config.ai.provider === 'openai' && !this.config.ai.apiKey) {
-            errors.push('OpenAI API key is required');
+        if (!this.config.ai.apiKey) {
+            errors.push(`${this.config.ai.provider} API key is required (set ai.apiKey, or the ANTHROPIC_API_KEY/OPENAI_API_KEY/DI_CUSTOM_API_KEY environment variable)`);
         }
         if (!this.config.projectName?.trim()) {
             errors.push('Project name is required');
@@ -131,6 +146,9 @@ class ConfigLoader {
         const figma = { ...DEFAULT_CONFIG.figma, ...(overrides?.figma ?? {}) };
         const flutter = { ...DEFAULT_CONFIG.flutter, ...(overrides?.flutter ?? {}) };
         const ai = { ...DEFAULT_CONFIG.ai, ...(overrides?.ai ?? {}) };
+        if (!ai.apiKey && ai.provider) {
+            ai.apiKey = resolveApiKeyFromEnv(ai.provider);
+        }
         const storage = { ...DEFAULT_CONFIG.storage, ...(overrides?.storage ?? {}) };
         const logging = { ...DEFAULT_CONFIG.logging, ...(overrides?.logging ?? {}) };
         return {
@@ -145,14 +163,13 @@ class ConfigLoader {
 }
 exports.ConfigLoader = ConfigLoader;
 function createDefaultConfig(projectName) {
-    return JSON.parse(JSON.stringify({
-        ...DEFAULT_CONFIG,
+    // Goes through ConfigLoader.buildConfig() (rather than a raw JSON
+    // round-trip of DEFAULT_CONFIG) so a freshly created config still picks up
+    // an API key from the environment instead of always starting blank.
+    return new ConfigLoader({
         projectName,
-        storage: {
-            ...DEFAULT_CONFIG.storage,
-            path: path.join(os.homedir(), '.design-intelligence', projectName),
-        },
-    }));
+        storage: { type: 'filesystem', path: path.join(os.homedir(), '.design-intelligence', projectName) },
+    }).getConfig();
 }
 function loadOrCreateConfig(projectPath) {
     const configPath = path.join(projectPath, 'di.config.json');

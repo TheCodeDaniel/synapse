@@ -66,6 +66,13 @@ export type { ImplementationPlan, Task, WidgetMatch } from "./types";
 // UI Agent
 export { UIAgent } from "./agent";
 export type { GenerationResult } from "./agent";
+export {
+  AnthropicProvider,
+  OpenAIProvider,
+  CustomProvider,
+  createProvider,
+} from "./agent/providers";
+export type { LLMProvider, LLMCompletionOptions } from "./agent/providers";
 
 // Validation
 export { CodeValidator } from "./validation";
@@ -87,4 +94,5 @@ export type {
   EventCallback,
   ValidationError,
 } from "./types";
-export type { Result, Success, Failure, AppError, ErrorCode } from "./types";
+export type { Result, Success, Failure, AppError } from "./types";
+export { ErrorCode, ok, err, okAsync, createError, DesignIntelligenceError } from "./types";
