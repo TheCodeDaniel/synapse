@@ -1,0 +1,14 @@
+{
+  "roots": [
+    "analyze_error_project"
+  ],
+  "packages": [
+    {
+      "name": "analyze_error_project",
+      "version": "0.0.0",
+      "dependencies": [],
+      "devDependencies": []
+    }
+  ],
+  "configVersion": 1
+}

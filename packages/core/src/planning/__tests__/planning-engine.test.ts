@@ -110,4 +110,33 @@ describe('PlanningEngine', () => {
     const reuseTasks = plan.tasks.filter(t => t.type === 'reuse_widget' || t.type === 'update_widget');
     expect(reuseTasks.some(t => t.existingWidgetId === 'w1')).toBe(true);
   });
+
+  it('creates a reuse task for a discovered pattern that matches an existing widget', async () => {
+    const engine = new PlanningEngine();
+    const designGraph: DesignGraph = { ...buildDesignGraphWithNestedInstance(), pages: [], discoveredPatterns: [
+      { suggestedName: 'ProductCard', occurrenceCount: 3, nodeIds: ['n1', 'n2', 'n3'], fingerprint: 'fp1' },
+    ] };
+    const projectGraph = buildProjectGraphWithWidget('ProductCard');
+
+    const plan = await engine.compare(designGraph, projectGraph);
+
+    const patternTask = plan.tasks.find(t => t.designNodeId === 'n1');
+    expect(patternTask).toBeDefined();
+    expect(patternTask?.existingWidgetId).toBe('w1');
+    expect(plan.summary.widgetsToReuse).toBeGreaterThan(0);
+  });
+
+  it('creates a create_widget task for a discovered pattern with no matching widget', async () => {
+    const engine = new PlanningEngine();
+    const designGraph: DesignGraph = { ...buildDesignGraphWithNestedInstance(), pages: [], discoveredPatterns: [
+      { suggestedName: 'PromoBanner', occurrenceCount: 2, nodeIds: ['n4', 'n5'], fingerprint: 'fp2' },
+    ] };
+    const projectGraph = { widgets: new Map() } as unknown as ProjectGraph;
+
+    const plan = await engine.compare(designGraph, projectGraph);
+
+    const patternTask = plan.tasks.find(t => t.designNodeId === 'n4');
+    expect(patternTask?.type).toBe('create_widget');
+    expect(patternTask?.targetFilePath).toBe('lib/widgets/promobanner.dart');
+  });
 });

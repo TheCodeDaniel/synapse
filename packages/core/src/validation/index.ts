@@ -14,6 +14,13 @@ export interface ValidationResult {
   output: string;
 }
 
+/** The shape Node actually populates on the Error thrown by a failed execSync call. */
+interface ExecError extends Error {
+  status?: number;
+  stdout?: string;
+  stderr?: string;
+}
+
 export class CodeValidator {
   private projectRoot: string;
 
@@ -71,51 +78,64 @@ export class CodeValidator {
     }
 
     const errors: ValidationError[] = [];
-    const warnings: string[] = [];
 
-    // Run dart format check on single file
+    // `-o none` is a dry run — it reports whether the file would change
+    // without writing to disk. Without it, `dart format` rewrites the file
+    // in place, which is a surprising side effect for something called
+    // "validate".
     try {
-      execSync(`dart format --output=none "${resolvedPath}"`, {
+      execSync(`dart format --set-exit-if-changed -o none "${resolvedPath}"`, {
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
       });
-    } catch (error) {
-      const output = error instanceof Error ? error.message : '';
-      errors.push({ file: filePath, message: `Format check failed: ${output}`, severity: 'error' });
+    } catch {
+      errors.push({ file: filePath, message: 'File is not formatted according to dart format', severity: 'error' });
     }
 
     return {
       passed: errors.length === 0,
       errors,
-      warnings,
+      warnings: [],
       output: '',
     };
   }
 
   private runDartFormat(): ValidationResult {
     try {
-      const result = execSync(`cd "${this.projectRoot}" && dart format --set-exit-if-changed lib/`, {
+      const result = execSync(`cd "${this.projectRoot}" && dart format --set-exit-if-changed -o none lib/`, {
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
-      return {
-        passed: true,
-        errors: [],
-        warnings: result.trim() ? [result.trim()] : [],
-        output: result || '',
-      };
+      return { passed: true, errors: [], warnings: [], output: result || '' };
     } catch (error) {
-      const err = error as Error;
-      const outputLines = err.message.split('\n').filter(Boolean);
+      // execSync's thrown Error only puts "Command failed: <cmd>" in
+      // `.message` — the actual `dart format` output (the list of changed
+      // files) is on `.stdout`. Reading `.message` here previously meant
+      // this branch could never see real file paths at all.
+      const err = error as ExecError;
+      const stdout = err.stdout ?? '';
+      const changedFiles = this.parseChangedFiles(stdout);
 
       return {
         passed: false,
-        errors: [{ file: 'lib/', message: 'Dart format check failed', severity: 'error' }],
-        warnings: outputLines.slice(0, 10),
-        output: err.message,
+        errors:
+          changedFiles.length > 0
+            ? changedFiles.map(file => ({ file, message: 'File is not formatted according to dart format', severity: 'error' as const }))
+            : [{ file: 'lib/', message: 'Dart format check failed', severity: 'error' }],
+        warnings: [],
+        output: stdout || err.message,
       };
     }
+  }
+
+  private parseChangedFiles(output: string): string[] {
+    const files: string[] = [];
+    for (const line of output.split('\n')) {
+      const match = line.match(/^(?:Changed|Formatted)\s+(\S+\.dart)\s*$/);
+      if (match) files.push(match[1]);
+    }
+    return files;
   }
 
   private runDartAnalyze(): ValidationResult {
@@ -125,30 +145,20 @@ export class CodeValidator {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
-      return {
-        passed: true,
-        errors: [],
-        warnings: result.trim() ? [result.trim()] : [],
-        output: result || '',
-      };
+      return { passed: true, errors: [], warnings: [], output: result || '' };
     } catch (error) {
-      const err = error as Error;
-      const outputLines = err.message.split('\n').filter(Boolean);
-
-      // Parse dart analyze errors
-      const parsedErrors: ValidationError[] = [];
-      for (const line of outputLines) {
-        const fileMatch = line.match(/lib\/[\w/]+\.dart/);
-        if (fileMatch) {
-          parsedErrors.push({ file: fileMatch[0], message: line.trim(), severity: 'error' });
-        }
-      }
+      // Same `.message`-vs-`.stdout` issue as runDartFormat — `dart
+      // analyze`'s per-issue report is on stdout, not the thrown error's
+      // message, so the previous regex against `.message` never matched.
+      const err = error as ExecError;
+      const stdout = err.stdout ?? '';
+      const parsedErrors = this.parseAnalyzerOutput(stdout);
 
       return {
         passed: false,
-        errors: parsedErrors.length > 0 ? parsedErrors : [{ file: '', message: err.message.split('\n')[0] || 'Dart analyze failed', severity: 'error' }],
-        warnings: outputLines.slice(0, 20),
-        output: err.message,
+        errors: parsedErrors.length > 0 ? parsedErrors : [{ file: '', message: stdout.trim() || err.message, severity: 'error' }],
+        warnings: [],
+        output: stdout || err.message,
       };
     }
   }
@@ -161,21 +171,63 @@ export class CodeValidator {
         timeout: 60000,
       });
 
-      return {
-        passed: true,
-        errors: [],
-        warnings: result.trim() ? [result.trim()] : [],
-        output: result || '',
-      };
+      return { passed: true, errors: [], warnings: [], output: result || '' };
     } catch (error) {
-      // Flutter not installed or analyze failed - non-fatal for prototype
-      const err = error as Error;
+      const err = error as ExecError;
+      const stdout = err.stdout ?? '';
+      const parsedErrors = this.parseAnalyzerOutput(stdout);
+
+      if (parsedErrors.length > 0) {
+        return { passed: false, errors: parsedErrors, warnings: [], output: stdout };
+      }
+
+      // No parseable analyzer output at all — the command most likely
+      // failed to run (Flutter SDK not installed, timed out) rather than
+      // finding real issues, so this stays non-fatal instead of treating a
+      // missing SDK the same as a real analysis failure.
       return {
         passed: false,
         errors: [],
-        warnings: ['Flutter analyze skipped (Flutter SDK may not be installed)'],
-        output: '',
+        warnings: ['Flutter analyze skipped or failed to produce output (Flutter SDK may not be installed)'],
+        output: stdout,
       };
     }
+  }
+
+  /**
+   * Parses both `dart analyze` and `flutter analyze` issue lines. The two
+   * tools use different separators/field order for the same information —
+   * verified against a real Dart 3.11 / Flutter 3.41 SDK:
+   *   dart:    "  error - lib/foo.dart:12:34 - Message here. - lint_rule"
+   *   flutter: "  error • Message here • lib/foo.dart:12:34 • lint_rule"
+   */
+  private parseAnalyzerOutput(output: string): ValidationError[] {
+    const errors: ValidationError[] = [];
+    for (const line of output.split('\n')) {
+      const parsed = this.parseAnalyzerLine(line);
+      if (parsed) errors.push(parsed);
+    }
+    return errors;
+  }
+
+  private parseAnalyzerLine(line: string): ValidationError | null {
+    const dashFormat = line.match(/^\s*(error|warning|info)\s-\s(\S+):(\d+):(\d+)\s-\s(.+)\s-\s(\S+)\s*$/);
+    if (dashFormat) {
+      const [, severity, file, lineNo, col, message] = dashFormat;
+      return { file, line: Number(lineNo), column: Number(col), message: message.trim(), severity: this.mapSeverity(severity) };
+    }
+
+    const bulletFormat = line.match(/^\s*(error|warning|info)\s•\s(.+?)\s•\s(\S+):(\d+):(\d+)\s•\s(\S+)\s*$/);
+    if (bulletFormat) {
+      const [, severity, message, file, lineNo, col] = bulletFormat;
+      return { file, line: Number(lineNo), column: Number(col), message: message.trim(), severity: this.mapSeverity(severity) };
+    }
+
+    return null;
+  }
+
+  /** `ValidationError.severity` only models 'error' | 'warning' — analyzer 'info' issues are surfaced as warnings rather than silently dropped. */
+  private mapSeverity(rawSeverity: string): 'error' | 'warning' {
+    return rawSeverity === 'error' ? 'error' : 'warning';
   }
 }

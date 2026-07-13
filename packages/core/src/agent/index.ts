@@ -3,6 +3,7 @@
  */
 
 import { AIConfig, DesignGraph, DesignNode, ImplementationPlan, ProjectGraph, Task } from '../types';
+import { getChildNodes } from '../utils/design-node-traversal';
 import { createProvider, LLMProvider } from './providers';
 
 export interface GenerationResult {
@@ -123,7 +124,7 @@ export class UIAgent {
     const searchNodes = (nodes: DesignNode[]): DesignNode | null => {
       for (const node of nodes) {
         if (node?.id === task.designNodeId) return node;
-        const found = searchNodes(this.getChildNodes(node));
+        const found = searchNodes(getChildNodes(node));
         if (found) return found;
       }
       return null;
@@ -138,28 +139,6 @@ export class UIAgent {
     }
 
     return '';
-  }
-
-  /**
-   * Returns a node's children, uniformly across the DesignNode union.
-   * `ComponentNode` has no `children` field — its content lives under
-   * `variants[].children` — so a naive `.children` walk can never find a
-   * design node nested inside a component's variants.
-   */
-  private getChildNodes(node: DesignNode): DesignNode[] {
-    switch (node.type) {
-      case 'frame':
-      case 'group':
-      case 'instance':
-      case 'variant':
-      case 'document':
-      case 'slice':
-        return node.children;
-      case 'component':
-        return node.variants.flatMap(variant => variant.children);
-      default:
-        return [];
-    }
   }
 
   private async callModel(prompt: string): Promise<string> {

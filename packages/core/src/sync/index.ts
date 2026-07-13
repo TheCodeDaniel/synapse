@@ -4,6 +4,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { DesignGraph, DesignNode, Task } from '../types';
+import { deserializeDesignGraph, getChildNodes } from '../utils';
 
 export interface ChangeSet {
   figmaChanged: boolean;
@@ -17,6 +19,8 @@ export interface SyncOptions {
   watchCodeChanges: boolean;
   incrementalAnalysis: boolean;
 }
+
+type SyncDomain = 'design' | 'code';
 
 export class IncrementalSync {
   private cacheDir: string;
@@ -34,10 +38,22 @@ export class IncrementalSync {
     };
   }
 
-  detectChanges(
-    designGraphPath: string,
-    projectGraphPath: string
-  ): ChangeSet {
+  /**
+   * Compares the design/project graph files (and, for code, individual Dart
+   * files under `lib/`) against the last time this method was called, then
+   * records each file's own mtime as the new sync point for next time.
+   * Change detection and bookkeeping are coupled deliberately — a caller
+   * can't forget to persist sync state, which is what made every previous
+   * run behave like a first run (nothing ever called the old
+   * `saveSyncMetadata`).
+   *
+   * Sync markers are always a file's own mtime, never `Date.now()` — mixing
+   * the JS wall clock with filesystem mtimes across two calls is a real
+   * flakiness source (different clock sources/precision can disagree by a
+   * few ms, especially in CI/virtualized filesystems), so everything here
+   * compares mtime-to-previously-stored-mtime only.
+   */
+  detectChanges(designGraphPath: string, projectGraphPath: string): ChangeSet {
     const changes: ChangeSet = {
       figmaChanged: false,
       codeChanged: false,
@@ -45,178 +61,118 @@ export class IncrementalSync {
       affectedCodeFiles: [],
     };
 
-    // Check if Figma cache has changed
     const designGraphFile = path.resolve(designGraphPath);
     if (fs.existsSync(designGraphFile)) {
       const stat = fs.statSync(designGraphFile);
-      changes.figmaChanged = this.hasChangedSinceLastRun(
-        'design_graph',
-        stat.mtimeMs,
-        designGraphFile
-      );
+      changes.figmaChanged = this.hasChangedSinceLastRun('design', stat.mtimeMs);
 
-      // Determine which nodes changed (simplified - in production would diff JSON)
-      try {
-        const content = fs.readFileSync(designGraphFile, 'utf-8');
-        const graph = JSON.parse(content);
-        if (graph.updatedAt !== this.getLastSyncTime('design')) {
-          changes.affectedDesignNodes = this.getChangedNodeIds(graph);
+      if (changes.figmaChanged) {
+        try {
+          const raw = JSON.parse(fs.readFileSync(designGraphFile, 'utf-8'));
+          changes.affectedDesignNodes = this.getChangedNodeIds(deserializeDesignGraph(raw));
+        } catch {
+          changes.affectedDesignNodes = [];
         }
-      } catch {
-        changes.figmaChanged = true;
       }
+
+      this.saveSyncMetadata('design', stat.mtimeMs);
     }
 
-    // Check if code files have changed
     const projectGraphFile = path.resolve(projectGraphPath);
     if (fs.existsSync(projectGraphFile)) {
       const stat = fs.statSync(projectGraphFile);
-      changes.codeChanged = this.hasChangedSinceLastRun(
-        'project_graph',
-        stat.mtimeMs,
-        projectGraphFile
-      );
+      changes.codeChanged = this.hasChangedSinceLastRun('code', stat.mtimeMs);
 
-      // Find modified Dart files in lib/
+      // Must run before saveSyncMetadata('code', ...) below — it diffs Dart
+      // file mtimes against the *previous* sync point, not this one.
       if (changes.codeChanged) {
         changes.affectedCodeFiles = this.getModifiedDartFiles();
       }
+
+      this.saveSyncMetadata('code', stat.mtimeMs);
     }
 
     return changes;
   }
 
-  async getRelevantTasks(
-    changes: ChangeSet,
-    allTasks: Array<{ id: string; type: string; designNodeId?: string; targetFilePath?: string }>
-  ): Promise<string[]> {
-    const relevantTaskIds: string[] = [];
+  async getRelevantTasks(changes: ChangeSet, allTasks: Task[]): Promise<string[]> {
+    if (!changes.figmaChanged && !changes.codeChanged) {
+      return [];
+    }
+
+    // Neither change set narrowed anything down (e.g. a graph changed but we
+    // couldn't diff it) — conservatively treat every task as relevant rather
+    // than silently generating nothing.
+    if (!changes.affectedDesignNodes?.length && !changes.affectedCodeFiles?.length) {
+      return allTasks.map(task => task.id);
+    }
+
+    const relevantTaskIds = new Set<string>();
 
     for (const task of allTasks) {
-      if (!changes.codeChanged && !changes.figmaChanged) {
-        continue; // No changes, no re-generation needed
+      if (changes.figmaChanged && task.designNodeId && changes.affectedDesignNodes?.includes(task.designNodeId)) {
+        relevantTaskIds.add(task.id);
       }
 
-      // If design changed, check if task is related to affected nodes
-      if (changes.figmaChanged && task.designNodeId) {
-        if (changes.affectedDesignNodes?.includes(task.designNodeId)) {
-          relevantTaskIds.push(task.id);
-        }
-      }
-
-      // If code changed, check if task is related to affected files
       if (changes.codeChanged && task.targetFilePath) {
-        for (const affectedFile of (changes.affectedCodeFiles ?? [])) {
+        for (const affectedFile of changes.affectedCodeFiles ?? []) {
           const normalizedAffected = path.normalize(affectedFile).toLowerCase();
-          const normalizedTask = path.normalize(task.targetFilePath || '').toLowerCase();
+          const normalizedTask = path.normalize(task.targetFilePath).toLowerCase();
 
-          // Check if the affected file matches or is a parent directory
           if (normalizedTask.includes(normalizedAffected) || normalizedAffected.includes(normalizedTask)) {
-            relevantTaskIds.push(task.id);
+            relevantTaskIds.add(task.id);
             break;
           }
         }
       }
-
-      // If no specific filters apply, include tasks that depend on changed areas
-      if (!changes.affectedDesignNodes?.length && !changes.affectedCodeFiles?.length) {
-        relevantTaskIds.push(task.id);
-      }
     }
 
-    return [...new Set(relevantTaskIds)];
+    return [...relevantTaskIds];
   }
 
-  saveSyncMetadata(graphType: string, timestampMs: number, filePath: string): void {
+  saveSyncMetadata(domain: SyncDomain, timestampMs: number = Date.now()): void {
     try {
       fs.mkdirSync(this.cacheDir, { recursive: true });
-      const metadataFile = path.join(
-        this.cacheDir,
-        `${graphType}_last_sync.json`
-      );
-
-      // Preserve existing data if available
-      let existingData: Record<string, unknown> = {};
-      if (fs.existsSync(metadataFile)) {
-        try {
-          existingData = JSON.parse(fs.readFileSync(metadataFile, 'utf-8'));
-        } catch {
-          // Ignore parse errors
-        }
-      }
-
-      const data = {
-        ...existingData,
-        [filePath]: {
-          syncTime: timestampMs,
-          lastModified: Date.now(),
-        },
-      };
-
-      fs.writeFileSync(metadataFile, JSON.stringify(data, null, 2), 'utf-8');
+      const metadataFile = path.join(this.cacheDir, `${domain}_last_sync.json`);
+      fs.writeFileSync(metadataFile, JSON.stringify({ syncTime: timestampMs }, null, 2), 'utf-8');
     } catch {
-      // Silently fail - metadata is not critical for prototype
+      // Non-fatal: losing sync metadata just means the next run treats
+      // everything as changed again, not a correctness issue.
     }
   }
 
-  getLastSyncTime(graphType: string): number | undefined {
+  getLastSyncTime(domain: SyncDomain): number | undefined {
     try {
-      const metadataFile = path.join(
-        this.cacheDir,
-        `${graphType}_last_sync.json`
-      );
-
+      const metadataFile = path.join(this.cacheDir, `${domain}_last_sync.json`);
       if (!fs.existsSync(metadataFile)) return undefined;
 
-      const data = JSON.parse(fs.readFileSync(metadataFile, 'utf-8'));
-      // Return the most recent sync time across all files
-      let maxTime = 0;
-      for (const entry of Object.values(data)) {
-        const e = entry as { syncTime?: number };
-        if (e.syncTime !== undefined && e.syncTime > maxTime) maxTime = e.syncTime;
-      }
-      return maxTime || undefined;
+      const data = JSON.parse(fs.readFileSync(metadataFile, 'utf-8')) as { syncTime?: number };
+      return data.syncTime;
     } catch {
       return undefined;
     }
   }
 
-  private hasChangedSinceLastRun(
-    graphType: string,
-    currentMtime: number,
-    filePath: string
-  ): boolean {
-    const lastSync = this.getLastSyncTime(graphType);
-    if (!lastSync) return true; // No previous sync, consider changed
-    return currentMtime !== lastSync;
+  private hasChangedSinceLastRun(domain: SyncDomain, currentMtime: number): boolean {
+    const lastSync = this.getLastSyncTime(domain);
+    if (lastSync === undefined) return true; // No previous sync, consider changed
+    return currentMtime > lastSync;
   }
 
-  private getChangedNodeIds(graphData: any): string[] {
+  private getChangedNodeIds(graph: DesignGraph): string[] {
     const nodeIds: string[] = [];
 
-    const extractIds = (node: any): void => {
-      if (!node) return;
-      if (node.id) nodeIds.push(node.id);
-      if (Array.isArray(node.children)) {
-        for (const child of node.children) {
-          extractIds(child);
-        }
-      }
+    const visit = (node: DesignNode): void => {
+      nodeIds.push(node.id);
+      for (const child of getChildNodes(node)) visit(child);
     };
 
     try {
-      // Handle pages structure
-      if (graphData.pages?.length > 0) {
-        for (const page of graphData.pages) {
-          extractIds(page);
-        }
-      } else if (graphData.doc?.children) {
-        for (const child of graphData.doc.children) {
-          extractIds(child);
-        }
+      for (const page of graph.pages ?? []) {
+        for (const node of page.children ?? []) visit(node);
       }
     } catch {
-      // Return all IDs on error
+      // Return whatever was collected before the error
     }
 
     return nodeIds;
@@ -226,11 +182,10 @@ export class IncrementalSync {
     const libDir = path.join(this.projectRoot, 'lib');
     if (!fs.existsSync(libDir)) return [];
 
-    const modifiedFiles: string[] = [];
     const lastSync = this.getLastSyncTime('code');
+    if (lastSync === undefined) return []; // No previous sync to diff against
 
-    if (!lastSync) return []; // No previous sync
-
+    const modifiedFiles: string[] = [];
     const dartFiles = this.scanDartFilesRecursive(libDir);
 
     for (const file of dartFiles) {

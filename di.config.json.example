@@ -1,0 +1,23 @@
+{
+  "projectName": "my-flutter-app",
+  "figma": {
+    "accessToken": "",
+    "cacheEnabled": true,
+    "cacheTTLMinutes": 60
+  },
+  "flutter": {
+    "projectPath": "/path/to/flutter/project",
+    "incrementalAnalysis": true
+  },
+  "ai": {
+    "provider": "anthropic",
+    "apiKey": "",
+    "model": "claude-sonnet-4-5",
+    "temperature": 0.2,
+    "maxTokens": 8192
+  },
+  "logging": {
+    "level": "info",
+    "toConsole": true
+  }
+}

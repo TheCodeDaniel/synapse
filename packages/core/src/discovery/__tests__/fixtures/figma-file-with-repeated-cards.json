@@ -1,0 +1,156 @@
+{
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "1:0",
+        "name": "Page 1",
+        "type": "CANVAS",
+        "children": [
+          {
+            "id": "2:1",
+            "name": "Card 1",
+            "type": "FRAME",
+            "x": 0,
+            "y": 0,
+            "width": 158,
+            "height": 220,
+            "layoutMode": "VERTICAL",
+            "primaryAxisAlignItems": "MIN",
+            "counterAxisAlignItems": "MIN",
+            "paddingLeft": 8,
+            "paddingRight": 8,
+            "paddingTop": 8,
+            "paddingBottom": 8,
+            "primaryAxisSpacing": 4,
+            "cornerRadius": 8,
+            "fills": [{ "type": "SOLID", "visible": true, "opacity": 1, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+            "children": [
+              { "id": "2:2", "name": "Image", "type": "RECTANGLE", "x": 8, "y": 8, "width": 142, "height": 120, "fills": [] },
+              {
+                "id": "2:3", "name": "Title", "type": "TEXT", "x": 8, "y": 132, "width": 142, "height": 20,
+                "characters": "Sneaker A",
+                "style": { "fontFamily": "Inter", "fontWeight": 600, "fontSize": 14, "textAlignHorizontal": "LEFT", "textAlignVertical": "TOP", "letterSpacing": 0 },
+                "fills": []
+              },
+              {
+                "id": "2:4", "name": "Price", "type": "TEXT", "x": 8, "y": 154, "width": 142, "height": 16,
+                "characters": "$120",
+                "style": { "fontFamily": "Inter", "fontWeight": 400, "fontSize": 12, "textAlignHorizontal": "LEFT", "textAlignVertical": "TOP", "letterSpacing": 0 },
+                "fills": []
+              }
+            ]
+          },
+          {
+            "id": "2:5",
+            "name": "Card 2",
+            "type": "FRAME",
+            "x": 166,
+            "y": 0,
+            "width": 160,
+            "height": 220,
+            "layoutMode": "VERTICAL",
+            "primaryAxisAlignItems": "MIN",
+            "counterAxisAlignItems": "MIN",
+            "paddingLeft": 8,
+            "paddingRight": 8,
+            "paddingTop": 8,
+            "paddingBottom": 8,
+            "primaryAxisSpacing": 4,
+            "cornerRadius": 8,
+            "fills": [{ "type": "SOLID", "visible": true, "opacity": 1, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+            "children": [
+              { "id": "2:6", "name": "Image", "type": "RECTANGLE", "x": 174, "y": 8, "width": 144, "height": 120, "fills": [] },
+              {
+                "id": "2:7", "name": "Title", "type": "TEXT", "x": 174, "y": 132, "width": 144, "height": 20,
+                "characters": "Sneaker B",
+                "style": { "fontFamily": "Inter", "fontWeight": 600, "fontSize": 14, "textAlignHorizontal": "LEFT", "textAlignVertical": "TOP", "letterSpacing": 0 },
+                "fills": []
+              },
+              {
+                "id": "2:8", "name": "Price", "type": "TEXT", "x": 174, "y": 154, "width": 144, "height": 16,
+                "characters": "$95",
+                "style": { "fontFamily": "Inter", "fontWeight": 400, "fontSize": 12, "textAlignHorizontal": "LEFT", "textAlignVertical": "TOP", "letterSpacing": 0 },
+                "fills": []
+              }
+            ]
+          },
+          {
+            "id": "2:9",
+            "name": "ProductCard",
+            "type": "FRAME",
+            "x": 332,
+            "y": 0,
+            "width": 163,
+            "height": 218,
+            "layoutMode": "VERTICAL",
+            "primaryAxisAlignItems": "MIN",
+            "counterAxisAlignItems": "MIN",
+            "paddingLeft": 8,
+            "paddingRight": 8,
+            "paddingTop": 8,
+            "paddingBottom": 8,
+            "primaryAxisSpacing": 4,
+            "cornerRadius": 8,
+            "fills": [{ "type": "SOLID", "visible": true, "opacity": 1, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+            "children": [
+              { "id": "2:10", "name": "Image", "type": "RECTANGLE", "x": 340, "y": 8, "width": 147, "height": 120, "fills": [] },
+              {
+                "id": "2:11", "name": "Title", "type": "TEXT", "x": 340, "y": 132, "width": 147, "height": 20,
+                "characters": "Sneaker C",
+                "style": { "fontFamily": "Inter", "fontWeight": 600, "fontSize": 14, "textAlignHorizontal": "LEFT", "textAlignVertical": "TOP", "letterSpacing": 0 },
+                "fills": []
+              },
+              {
+                "id": "2:12", "name": "Price", "type": "TEXT", "x": 340, "y": 154, "width": 147, "height": 16,
+                "characters": "$140",
+                "style": { "fontFamily": "Inter", "fontWeight": 400, "fontSize": 12, "textAlignHorizontal": "LEFT", "textAlignVertical": "TOP", "letterSpacing": 0 },
+                "fills": []
+              }
+            ]
+          },
+          {
+            "id": "3:1",
+            "name": "Promo Banner",
+            "type": "FRAME",
+            "x": 0,
+            "y": 240,
+            "width": 495,
+            "height": 80,
+            "layoutMode": "HORIZONTAL",
+            "primaryAxisAlignItems": "CENTER",
+            "counterAxisAlignItems": "CENTER",
+            "paddingLeft": 16,
+            "paddingRight": 16,
+            "paddingTop": 16,
+            "paddingBottom": 16,
+            "primaryAxisSpacing": 0,
+            "cornerRadius": 0,
+            "fills": [{ "type": "SOLID", "visible": true, "opacity": 1, "color": { "r": 0.9, "g": 0.2, "b": 0.2, "a": 1 } }],
+            "children": [
+              {
+                "id": "3:2", "name": "Message", "type": "TEXT", "x": 16, "y": 260, "width": 463, "height": 24,
+                "characters": "Free shipping this week",
+                "style": { "fontFamily": "Inter", "fontWeight": 700, "fontSize": 18, "textAlignHorizontal": "CENTER", "textAlignVertical": "CENTER", "letterSpacing": 0 },
+                "fills": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "components": {},
+  "componentSets": {},
+  "schemaVersion": 0,
+  "styles": {},
+  "name": "Repeated Cards Fixture",
+  "lastModified": "2026-01-01T00:00:00Z",
+  "thumbnailUrl": "",
+  "version": "1",
+  "role": "owner",
+  "editorType": "figma",
+  "linkAccess": "org_view"
+}

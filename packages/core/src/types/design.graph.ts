@@ -15,6 +15,20 @@ export interface DesignGraph {
   variables: VariableRegistry;
   designTokens: DesignTokenRegistry;
   assets: AssetRegistry;
+  /** Repeated UI patterns detected by ComponentDiscoveryEngine that aren't formal Figma components. */
+  discoveredPatterns?: DiscoveredPattern[];
+}
+
+/**
+ * A structurally-repeated group of frame/group nodes that a designer built
+ * multiple times by hand instead of turning into a Figma component —
+ * detected by matching on shape (layout, child types, size), not naming.
+ */
+export interface DiscoveredPattern {
+  suggestedName: string;
+  occurrenceCount: number;
+  nodeIds: string[];
+  fingerprint: string;
 }
 
 export interface FigmaComponent {

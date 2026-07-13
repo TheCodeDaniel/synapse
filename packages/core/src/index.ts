@@ -56,6 +56,9 @@ export type {
   FigmaStyleMetadata,
 } from "./compiler";
 
+// Component Discovery Engine
+export { ComponentDiscoveryEngine } from "./discovery";
+
 // Analyzer (Flutter)
 export { FlutterAnalyzer } from "./analyzer";
 
@@ -86,6 +89,10 @@ export type { IntegrationResult } from "./integration";
 export { IncrementalSync } from "./sync";
 export type { ChangeSet, SyncOptions } from "./sync";
 
+// Pipeline (orchestrates the full flow; the first real CoreEvent emitter)
+export { Pipeline } from "./pipeline";
+export type { PipelineState, PipelineOptions } from "./pipeline";
+
 // Events & Results
 export type {
   EventType,
@@ -95,4 +102,11 @@ export type {
   ValidationError,
 } from "./types";
 export type { Result, Success, Failure, AppError } from "./types";
-export { ErrorCode, ok, err, okAsync, createError, DesignIntelligenceError } from "./types";
+export {
+  ErrorCode,
+  ok,
+  err,
+  okAsync,
+  createError,
+  DesignIntelligenceError,
+} from "./types";

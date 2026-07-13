@@ -4,6 +4,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import * as yaml from "js-yaml";
 import {
   ProjectGraph,
   WidgetDefinition,
@@ -20,11 +21,14 @@ import {
   CodeStyleRules,
   FileStructureRules,
   ImportOrdering,
+  ArchitectureInfo,
+  FolderStructure,
+  FeatureModule,
+  SharedResources,
 } from "../types";
 
 export class FlutterAnalyzer {
   private rootPath: string;
-  private logger?: any;
 
   constructor(rootPath: string) {
     this.rootPath = path.resolve(rootPath);
@@ -51,7 +55,7 @@ export class FlutterAnalyzer {
     const dependencies = this.readDependencies();
     const assets = this.scanAssets(pubspecContent);
     const conventions = this.detectConventions(widgets, libDir);
-    const architecture = this.analyzeArchitecture(libDir, widgets);
+    const architecture = this.analyzeArchitecture(libDir, widgets, dependencies);
 
     return {
       id: `flutter_${Date.now()}`,
@@ -80,25 +84,13 @@ export class FlutterAnalyzer {
     const pubspecPath = path.join(this.rootPath, "pubspec.yaml");
     if (!fs.existsSync(pubspecPath)) return {};
 
-    const content = fs.readFileSync(pubspecPath, "utf-8");
-    // Simple YAML parsing for pubspec (avoids external dependency)
-    const result: Record<string, unknown> = {};
-    let currentKey: string | null = null;
-
-    for (const line of content.split("\n")) {
-      if (!line.trim() || line.startsWith("#")) continue;
-
-      const match = line.match(/^(\w[\w_-]*)\s*:\s*(.*)$/);
-      if (match) {
-        const [, key, value] = match;
-        result[currentKey ?? key] = value?.trim();
-        currentKey = key;
-      } else if (line.startsWith("  - ")) {
-        // Array item under current key
-      }
+    try {
+      const content = fs.readFileSync(pubspecPath, "utf-8");
+      const parsed = yaml.load(content);
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+    } catch {
+      return {};
     }
-
-    return result as Record<string, unknown>;
   }
 
   private async scanWidgets(
@@ -546,7 +538,9 @@ export class FlutterAnalyzer {
 
   private readDependencies(): DependencyInfo {
     const pubspecPath = path.join(this.rootPath, "pubspec.yaml");
-    if (!fs.existsSync(pubspecPath)) {
+    const pubspec = this.readPubspec();
+
+    if (!fs.existsSync(pubspecPath) || Object.keys(pubspec).length === 0) {
       return {
         pubspecPath: "",
         dependencies: {},
@@ -556,37 +550,20 @@ export class FlutterAnalyzer {
       };
     }
 
-    const content = fs.readFileSync(pubspecPath, "utf-8");
-    const deps: Record<string, string> = {};
-    const devDeps: Record<string, string> = {};
-    let section: "dependencies" | "dev_dependencies" | null = null;
-
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-
-      if (trimmed === "dependencies:") {
-        section = "dependencies";
-        continue;
-      }
-      if (trimmed === "dev_dependencies:") {
-        section = "dev_dependencies";
-        continue;
-      }
-
-      const depMatch = line.match(/^\s+(\w[\w_-]*):\s*(.*)$/);
-      if (depMatch) {
-        const [_, name, version] = depMatch;
-        if (section === "dependencies") deps[name] = version.trim();
-        else if (section === "dev_dependencies") devDeps[name] = version.trim();
-      }
-    }
+    // Real YAML parsing means `dependency_overrides:` (or any other
+    // top-level key) is naturally its own separate object — the previous
+    // line-based parser tracked "current section" with no reset on other
+    // top-level keys, so a dependency_overrides section's content leaked
+    // into whichever of dependencies/dev_dependencies was scanned last.
+    const deps = this.normalizeDependencyMap(pubspec.dependencies);
+    const devDeps = this.normalizeDependencyMap(pubspec.dev_dependencies);
+    const environment = pubspec.environment as { sdk?: string } | undefined;
 
     return {
       pubspecPath,
       dependencies: deps,
       devDependencies: devDeps,
-      flutterSdk: "",
+      flutterSdk: environment?.sdk ?? "",
       keyPackages: Object.keys(deps).filter((d) =>
         ["flutter_bloc", "bloc", "riverpod", "get_it", "dio", "go_router"].some(
           (k) => d.includes(k),
@@ -595,8 +572,58 @@ export class FlutterAnalyzer {
     };
   }
 
+  /**
+   * A pubspec dependency's value can be a plain version string (`^1.2.3`),
+   * an SDK reference (`{ sdk: flutter }`), a git/path/hosted spec, or `null`
+   * (any version) — normalized here to a single display string per package.
+   */
+  private normalizeDependencyMap(value: unknown): Record<string, string> {
+    if (!value || typeof value !== "object") return {};
+
+    const result: Record<string, string> = {};
+    for (const [name, spec] of Object.entries(value as Record<string, unknown>)) {
+      if (typeof spec === "string") {
+        result[name] = spec;
+      } else if (spec && typeof spec === "object" && "sdk" in spec) {
+        result[name] = `sdk:${(spec as { sdk: string }).sdk}`;
+      } else {
+        result[name] = spec === null || spec === undefined ? "any" : JSON.stringify(spec);
+      }
+    }
+    return result;
+  }
+
   private scanAssets(pubspecContent: Record<string, unknown>): AssetInfo {
-    return { images: [], fonts: [], locales: [], others: [] };
+    const flutterSection = (pubspecContent.flutter ?? {}) as { assets?: unknown; fonts?: unknown };
+    const images: string[] = [];
+    const others: string[] = [];
+    const fonts: string[] = [];
+
+    const imageExtensions = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".bmp"]);
+
+    if (Array.isArray(flutterSection.assets)) {
+      for (const entry of flutterSection.assets) {
+        if (typeof entry !== "string") continue;
+        const ext = path.extname(entry).toLowerCase();
+        (imageExtensions.has(ext) ? images : others).push(entry);
+      }
+    }
+
+    if (Array.isArray(flutterSection.fonts)) {
+      for (const fontFamily of flutterSection.fonts) {
+        const family = fontFamily as { family?: unknown; fonts?: unknown };
+        if (Array.isArray(family.fonts)) {
+          for (const font of family.fonts) {
+            const assetPath = (font as { asset?: unknown }).asset;
+            if (typeof assetPath === "string") fonts.push(assetPath);
+          }
+        } else if (typeof family.family === "string") {
+          fonts.push(family.family);
+        }
+      }
+    }
+
+    return { images, fonts, locales: [], others };
   }
 
   private detectConventions(
@@ -607,7 +634,7 @@ export class FlutterAnalyzer {
       files: "camelCase",
       classes: "PascalCase",
       variables: "camelCase",
-      constants: "UPPER_SNAKE_CASE" as any,
+      constants: "UPPER_SNAKE_CASE",
       methods: "camelCase",
       folders: "camelCase",
     };
@@ -641,14 +668,18 @@ export class FlutterAnalyzer {
   private analyzeArchitecture(
     libDir: string,
     widgets: Map<string, WidgetDefinition>,
-  ): any {
+    dependencies: DependencyInfo,
+  ): ArchitectureInfo {
+    const stateManagementPattern = this.detectStateManagementPattern(libDir, dependencies);
+
     const hasCleanArch =
       fs.existsSync(path.join(libDir, "src")) ||
       (fs.existsSync(path.join(libDir, "features")) &&
         fs.existsSync(path.join(libDir, "shared")));
+    const structuralPattern: ArchitectureInfo["pattern"] = hasCleanArch ? "clean_architecture" : "feature_folder";
 
     return {
-      pattern: hasCleanArch ? "clean_architecture" : "feature_folder",
+      pattern: stateManagementPattern ?? structuralPattern,
       folders: this.detectFolderStructure(libDir),
       hasTestFolder: fs.existsSync(path.join(this.rootPath, "test")),
       hasIntegrationTest: fs.existsSync(
@@ -657,16 +688,116 @@ export class FlutterAnalyzer {
     };
   }
 
-  private detectFolderStructure(libDir: string): any {
-    const items = fs.readdirSync(libDir);
+  /**
+   * Classifies state-management architecture from real signals: package
+   * dependencies (already collected by readDependencies().keyPackages, but
+   * previously never used for anything) plus source-level base-class/API
+   * usage. Takes priority over the folder-based structural heuristic, since
+   * "which state management library" is a stronger architectural signal
+   * than "which folders exist".
+   */
+  private detectStateManagementPattern(
+    libDir: string,
+    dependencies: DependencyInfo,
+  ): ArchitectureInfo["pattern"] | null {
+    if (!fs.existsSync(libDir)) return null;
+
+    const content = this.findDartFiles(libDir)
+      .map(file => {
+        try {
+          return fs.readFileSync(file, "utf-8");
+        } catch {
+          return "";
+        }
+      })
+      .join("\n");
+
+    const usesBloc =
+      /\bextends\s+(Bloc|Cubit)</.test(content) ||
+      dependencies.keyPackages.some(pkg => pkg.includes("bloc"));
+
+    const usesRiverpod =
+      /\bextends\s+(Consumer(Stateful)?Widget|\w*Notifier)\b/.test(content) ||
+      /\bref\.(watch|read|listen)\(/.test(content) ||
+      dependencies.keyPackages.some(pkg => pkg.includes("riverpod"));
+
+    const usesChangeNotifier =
+      /\bextends\s+ChangeNotifier\b/.test(content) || /\bChangeNotifierProvider\b/.test(content);
+
+    if (usesBloc) return "blocs";
+    if (usesRiverpod) return "riverpod";
+    if (usesChangeNotifier) return "mvvm";
+    return null;
+  }
+
+  private detectFolderStructure(libDir: string): FolderStructure {
+    if (!fs.existsSync(libDir)) {
+      return { lib: libDir, features: {}, shared: this.detectSharedResources(path.join(libDir, "shared")), assets: "", locales: "", config: "" };
+    }
+
+    const featuresDir = path.join(libDir, "features");
+    const features: Record<string, FeatureModule> = {};
+    if (fs.existsSync(featuresDir)) {
+      for (const entry of fs.readdirSync(featuresDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        features[entry.name] = this.analyzeFeatureModule(entry.name, path.join(featuresDir, entry.name));
+      }
+    }
+
     return {
       lib: libDir,
-      features: {},
-      shared: {},
-      assets: "",
-      locales: "",
-      config: "",
+      src: fs.existsSync(path.join(libDir, "src")) ? path.join(libDir, "src") : undefined,
+      features,
+      shared: this.detectSharedResources(path.join(libDir, "shared")),
+      assets: this.findSubdir(libDir, ["assets"]) ?? "",
+      locales: this.findSubdir(libDir, ["l10n", "locales", "localization"]) ?? "",
+      config: this.findSubdir(libDir, ["config", "core/config"]) ?? "",
     };
+  }
+
+  private analyzeFeatureModule(name: string, featurePath: string): FeatureModule {
+    const content = this.findDartFiles(featurePath)
+      .map(file => {
+        try {
+          return fs.readFileSync(file, "utf-8");
+        } catch {
+          return "";
+        }
+      })
+      .join("\n");
+
+    return {
+      name,
+      path: featurePath,
+      hasRoutes: /\b(GoRoute|MaterialPageRoute|onGenerateRoute)\b/.test(content),
+      hasWidgets: /\bextends\s+(Stateless|Stateful)Widget\b/.test(content),
+      hasPages: fs.existsSync(featurePath) && this.findDartFiles(featurePath).some(f => /page|screen/i.test(path.basename(f))),
+      hasBLoC: /\bextends\s+(Bloc|Cubit)</.test(content),
+      hasProvider: /\bextends\s+ChangeNotifier\b|\bChangeNotifierProvider\b/.test(content),
+      hasViewModel: /\bViewModel\b/.test(content),
+    };
+  }
+
+  private detectSharedResources(sharedDir: string): SharedResources {
+    const sub = (name: string): string => (fs.existsSync(path.join(sharedDir, name)) ? path.join(sharedDir, name) : "");
+    return {
+      widgets: sub("widgets"),
+      themes: sub("themes") || sub("theme"),
+      utils: sub("utils"),
+      constants: sub("constants"),
+      services: sub("services"),
+      models: sub("models"),
+      routes: sub("routes"),
+      localization: sub("localization") || sub("l10n"),
+    };
+  }
+
+  private findSubdir(baseDir: string, candidateNames: string[]): string | undefined {
+    for (const name of candidateNames) {
+      const candidate = path.join(baseDir, name);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+    return undefined;
   }
 
   private hasDependency(name: string): boolean {

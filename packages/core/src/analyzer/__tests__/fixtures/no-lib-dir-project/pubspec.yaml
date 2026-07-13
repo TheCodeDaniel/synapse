@@ -1,0 +1,9 @@
+name: no_lib_dir_project
+description: Fixture project with a pubspec.yaml but no lib/ directory at all.
+version: 1.0.0
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter

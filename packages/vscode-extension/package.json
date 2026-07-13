@@ -4,6 +4,7 @@
   "description": "VS Code extension for Design Intelligence MCP",
   "displayName": "Design Intelligence",
   "publisher": "di-mcp",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/TheCodeDaniel/synapse"
@@ -40,35 +41,23 @@
         "command": "design-intelligence.syncChanges",
         "title": "Sync Changes",
         "category": "Design Intelligence"
+      },
+      {
+        "command": "design-intelligence.setFigmaToken",
+        "title": "Set Figma Access Token",
+        "category": "Design Intelligence"
+      },
+      {
+        "command": "design-intelligence.setAiApiKey",
+        "title": "Set AI Provider API Key",
+        "category": "Design Intelligence"
+      },
+      {
+        "command": "di.reload",
+        "title": "Reload",
+        "category": "Design Intelligence"
       }
-    ],
-    "views": {
-      "design-intelligence": [
-        {
-          "type": "tree",
-          "id": "di.projectBrowser",
-          "name": "Projects"
-        },
-        {
-          "type": "tree",
-          "id": "di.planView",
-          "name": "Implementation Plan"
-        },
-        {
-          "type": "panel",
-          "id": "di.outputPanel",
-          "name": "Output"
-        }
-      ]
-    },
-    "menus": {
-      "commandPalette": [
-        {
-          "command": "design-intelligence.importFigmaFile",
-          "when": "false"
-        }
-      ]
-    }
+    ]
   },
   "scripts": {
     "build": "tsc --build",
@@ -79,14 +68,16 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@design-intelligence/core": "*",
-    "vscode-languageclient": "^9.0.1"
+    "@design-intelligence/core": "*"
   },
   "devDependencies": {
+    "@types/jest": "^29.5.11",
     "@types/vscode": "^1.86.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
     "typescript": "^5.4.0"
   },
   "engines": {

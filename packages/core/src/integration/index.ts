@@ -12,6 +12,9 @@ export interface IntegrationResult {
   errors: string[];
 }
 
+const ROUTE_FILE_NAMES = new Set(['routes.dart', 'app_routes.dart', 'navigation.dart', 'go_router.dart', 'app_router.dart', 'router.dart', 'app_pages.dart']);
+const ROUTE_DIR_NAMES = new Set(['routes', 'navigation']);
+
 export class ProjectIntegrator {
   private projectRoot: string;
 
@@ -75,6 +78,18 @@ export class ProjectIntegrator {
     }
 
     let content = fs.readFileSync(resolvedPath, 'utf-8');
+
+    // This method only knows how to string-splice a MaterialApp-style
+    // `routes: { 'path': (_) => Widget() }` map. Doing that to a
+    // GoRoute-based file would produce syntactically wrong Dart, so refuse
+    // rather than silently corrupting it.
+    if (/\bGoRoute\s*\(/.test(content) || content.includes('package:go_router/')) {
+      throw new Error(
+        `${routeFile} appears to use go_router (GoRoute-based routing), which this method doesn't support editing yet — ` +
+          `it only knows how to insert into a MaterialApp-style \`routes: { ... }\` map. Register the new route(s) manually.`
+      );
+    }
+
     const importsToAdd: string[] = [];
     const routesToAdd: string[] = [];
 
@@ -161,25 +176,72 @@ export class ProjectIntegrator {
     let content = fs.readFileSync(pubspecPath, 'utf-8');
 
     for (const asset of assetsToRegister) {
-      const assetLine = `    - ${asset.path}`;
-      if (!content.includes(asset.path)) {
-        const sectionMarker = asset.type === 'font' ? 'fonts:' : 'assets:';
-        const sectionIndex = content.indexOf(`  ${sectionMarker}`);
+      if (content.includes(asset.path)) continue;
 
-        if (sectionIndex !== -1) {
-          const nextSectionIndex = content.indexOf('  ', sectionIndex + 2);
-          const insertPos = nextSectionIndex > sectionIndex ? nextSectionIndex : content.length;
-          content = content.slice(0, insertPos) + `\n${assetLine}` + content.slice(insertPos);
-        }
-      }
+      const sectionKey = asset.type === 'font' ? 'fonts:' : 'assets:';
+      const insertPos = this.findSectionInsertPosition(content, sectionKey);
+      if (insertPos === null) continue; // section doesn't exist — leave the file untouched rather than guess where to create it
+
+      content = content.slice(0, insertPos) + `    - ${asset.path}\n` + content.slice(insertPos);
     }
 
     fs.writeFileSync(pubspecPath, content, 'utf-8');
   }
 
+  /**
+   * Finds the character offset at which a new list item should be inserted
+   * so it lands at the END of a YAML section (e.g. `flutter: assets:`), not
+   * the start. Walks line-by-line from the section header, skipping blank
+   * lines and lines indented *more* than the header (its existing list
+   * items), stopping at the first line indented the same or less (the next
+   * sibling key, or end of file).
+   *
+   * This is a deliberately lightweight, indentation-aware alternative to a
+   * full YAML parse-and-reserialize (js-yaml is available and used
+   * elsewhere) — pubspec.yaml is a hand-maintained file that commonly has
+   * explanatory comments, which a parse/dump round-trip would silently
+   * drop. A surgical string edit preserves everything else in the file.
+   */
+  private findSectionInsertPosition(content: string, sectionKey: string): number | null {
+    const lines = content.split('\n');
+    const headerIndex = lines.findIndex(line => line.trim() === sectionKey);
+    if (headerIndex === -1) return null;
+
+    const headerIndent = lines[headerIndex].match(/^\s*/)?.[0].length ?? 0;
+    let endLine = lines.length;
+
+    for (let i = headerIndex + 1; i < lines.length; i++) {
+      if (lines[i].trim() === '') continue;
+      const indent = lines[i].match(/^\s*/)?.[0].length ?? 0;
+      if (indent <= headerIndent) {
+        endLine = i;
+        break;
+      }
+    }
+
+    let insertLine = endLine;
+    while (insertLine > headerIndex + 1 && lines[insertLine - 1].trim() === '') {
+      insertLine--;
+    }
+
+    return lines.slice(0, insertLine).join('\n').length + (insertLine > 0 ? 1 : 0);
+  }
+
+  /**
+   * Whether a generated file is a route-registration file, checked by exact
+   * basename (matching the same well-known names FlutterAnalyzer looks for)
+   * or by living directly under a `routes/`/`navigation/` directory — not
+   * by raw substring containment, which previously misclassified any file
+   * whose path merely contained "pages" or "route" as a substring (e.g.
+   * `pages_selector_widget.dart`, `message_pages.dart`).
+   */
   private isRouteFile(filePath: string): boolean {
-    const routePatterns = ['route', 'navigation', 'app_', 'pages'];
-    return routePatterns.some(p => filePath.toLowerCase().includes(p));
+    const segments = filePath.split(/[\\/]/).map(s => s.toLowerCase());
+    const fileName = segments[segments.length - 1] ?? '';
+    const dirSegments = segments.slice(0, -1);
+
+    if (ROUTE_FILE_NAMES.has(fileName)) return true;
+    return dirSegments.some(dir => ROUTE_DIR_NAMES.has(dir));
   }
 
   private toPascalCase(str: string): string {

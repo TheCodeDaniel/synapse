@@ -5,3 +5,4 @@
 export { Logger, LogLevel, createLogger } from './logger';
 export { Cache } from './cache';
 export { serializeDesignGraph, deserializeDesignGraph, serializeProjectGraph, deserializeProjectGraph } from './graph-serialization';
+export { getChildNodes } from './design-node-traversal';

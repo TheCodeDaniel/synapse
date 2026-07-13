@@ -1,0 +1,13 @@
+name: clean_arch_setstate_project
+description: Fixture Flutter project with clean-architecture folders and plain setState (no bloc/riverpod/provider).
+version: 1.0.0
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

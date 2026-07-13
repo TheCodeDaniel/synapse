@@ -1,0 +1,14 @@
+{
+  "roots": [
+    "clean_project"
+  ],
+  "packages": [
+    {
+      "name": "clean_project",
+      "version": "0.0.0",
+      "dependencies": [],
+      "devDependencies": []
+    }
+  ],
+  "configVersion": 1
+}

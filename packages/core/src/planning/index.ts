@@ -12,6 +12,7 @@ import {
   WidgetMatch,
   MatchReason,
 } from '../types';
+import { getChildNodes } from '../utils/design-node-traversal';
 
 export class PlanningEngine {
   async compare(
@@ -100,11 +101,52 @@ export class PlanningEngine {
       });
     }
 
-    // Step 6: Sort by priority and order
+    // Step 6: Fold in repeated UI patterns that were hand-built instead of
+    // formalized as a Figma component (from ComponentDiscoveryEngine).
+    // Reuses the same name-similarity matcher as formal components, so a
+    // discovered "ProductCard" pattern still gets reused/updated against an
+    // existing widget rather than always creating a duplicate.
+    for (const pattern of designGraph.discoveredPatterns ?? []) {
+      const match = this.findBestMatch(pattern.suggestedName, projectGraph.widgets);
+
+      if (match) {
+        tasks.push({
+          id: `task_${uuidv4()}`,
+          type: match.needsModification ? 'update_widget' : 'reuse_widget',
+          priority: 'medium',
+          order: order++,
+          title: `${match.needsModification ? 'Update' : 'Reuse'} widget for discovered pattern: ${pattern.suggestedName}`,
+          description: `Design repeats this pattern ${pattern.occurrenceCount} times (not a formal Figma component) and matches existing widget ${match.existingWidgetId} with ${Math.round(match.matchScore * 100)}% similarity`,
+          designNodeId: pattern.nodeIds[0],
+          existingWidgetId: match.existingWidgetId,
+          targetFilePath: '',
+          requiresManualReview: match.needsModification,
+          dependencies: [],
+          status: 'pending',
+        });
+      } else {
+        const normalized = this.normalizeName(pattern.suggestedName);
+        tasks.push({
+          id: `task_${uuidv4()}`,
+          type: 'create_widget',
+          priority: 'medium',
+          order: order++,
+          title: `Create new widget for discovered pattern: ${pattern.suggestedName}`,
+          description: `Design repeats this pattern ${pattern.occurrenceCount} times across the file but it isn't a formal Figma component; extracting a reusable ${pattern.suggestedName} widget is recommended.`,
+          designNodeId: pattern.nodeIds[0],
+          targetFilePath: `lib/widgets/${normalized}.dart`,
+          requiresManualReview: false,
+          dependencies: [],
+          status: 'pending',
+        });
+      }
+    }
+
+    // Step 7: Sort by priority and order
     const priorityOrder = { high: 0, medium: 1, low: 2 };
     tasks.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
 
-    // Step 7: Set dependencies based on ordering
+    // Step 8: Set dependencies based on ordering
     for (let i = 1; i < tasks.length; i++) {
       if (tasks[i].type === 'create_widget') {
         const parentTaskIdx = tasks.findIndex(
@@ -129,9 +171,11 @@ export class PlanningEngine {
       completedTasks: 0,
       tasks,
       summary: {
-        widgetsToCreate: toCreate.length,
-        widgetsToUpdate: toUpdate.length,
-        widgetsToReuse: matches.filter(m => !m.needsModification).length,
+        // Derived from the final task list (rather than only `toCreate`/
+        // `matches`) so discovered-pattern tasks are reflected too.
+        widgetsToCreate: tasks.filter(t => t.type === 'create_widget').length,
+        widgetsToUpdate: tasks.filter(t => t.type === 'update_widget').length,
+        widgetsToReuse: tasks.filter(t => t.type === 'reuse_widget').length,
         filesToModify: filesToModify,
         filesToCreate: filesToCreate,
         routesToRegister: [],
@@ -163,28 +207,6 @@ export class PlanningEngine {
     return matches;
   }
 
-  /**
-   * Returns a node's children, uniformly across the DesignNode union.
-   * `ComponentNode` has no `children` field of its own — its content lives
-   * under `variants[].children` — so callers that only checked `.children`
-   * could never reach a component's actual design content.
-   */
-  private getChildNodes(node: DesignNode): DesignNode[] {
-    switch (node.type) {
-      case 'frame':
-      case 'group':
-      case 'instance':
-      case 'variant':
-      case 'document':
-      case 'slice':
-        return node.children;
-      case 'component':
-        return node.variants.flatMap(variant => variant.children);
-      default:
-        return [];
-    }
-  }
-
   private collectComponentIds(
     nodes: DesignNode[],
     visited: Set<string>
@@ -195,7 +217,7 @@ export class PlanningEngine {
         const name = this.normalizeName(node.name);
         if (name) visited.add(name);
       }
-      this.collectComponentIds(this.getChildNodes(node), visited);
+      this.collectComponentIds(getChildNodes(node), visited);
     }
   }
 
@@ -295,7 +317,7 @@ export class PlanningEngine {
         }
       }
 
-      this.collectAllComponentIds(this.getChildNodes(node), visited, result);
+      this.collectAllComponentIds(getChildNodes(node), visited, result);
     }
   }
 }

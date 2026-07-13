@@ -54,12 +54,14 @@ design-intelligence-mcp/
 │   │   │   ├── utils/                 # Utilities (logger, cache)
 │   │   │   ├── oauth/                 # Figma OAuth management
 │   │   │   ├── compiler/              # Figma API client & Design Compiler
+│   │   │   ├── discovery/             # Component Discovery Engine (repeated-pattern detection)
 │   │   │   ├── analyzer/              # Flutter project analyzer
 │   │   │   ├── planning/              # Planning engine (graph comparison)
-│   │   │   ├── agent/                 # UI code generation agent
+│   │   │   ├── agent/                 # UI code generation agent + LLM providers (agent/providers/)
 │   │   │   ├── validation/            # Code validation with Flutter tooling
 │   │   │   ├── integration/           # File merging & project updates
-│   │   │   └── sync/                  # Incremental change detection
+│   │   │   ├── sync/                  # Incremental change detection
+│   │   │   └── pipeline/              # Orchestrates the full flow end-to-end
 │   │   └── test/                      # Unit tests
 │   │
 │   └── vscode-extension/              # VS Code extension (thin UI layer)
@@ -99,13 +101,13 @@ npm test
 
 ## Configuration
 
-Create a configuration file (`di.config.json`) in your Flutter project root:
+Copy `di.config.json.example` to `di.config.json` in your Flutter project root:
 
 ```json
 {
   "projectName": "my-flutter-app",
   "figma": {
-    "accessToken": "your-figma-token-here",
+    "accessToken": "",
     "cacheEnabled": true,
     "cacheTTLMinutes": 60
   },
@@ -114,9 +116,9 @@ Create a configuration file (`di.config.json`) in your Flutter project root:
     "incrementalAnalysis": true
   },
   "ai": {
-    "provider": "openai",
-    "apiKey": "your-openai-key",
-    "model": "gpt-4o",
+    "provider": "anthropic",
+    "apiKey": "",
+    "model": "claude-sonnet-4-5",
     "temperature": 0.2,
     "maxTokens": 8192
   },
@@ -126,6 +128,10 @@ Create a configuration file (`di.config.json`) in your Flutter project root:
   }
 }
 ```
+
+Leave `figma.accessToken` and `ai.apiKey` blank and set them via environment variables instead (see `.env.example`) — `ConfigLoader` resolves `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DI_CUSTOM_API_KEY` automatically based on `ai.provider`, so a real key never has to sit in a file that could get committed. See `SECURITY.md` for the full key-handling model (this also covers how the VS Code extension stores secrets via `SecretStorage` instead of this file).
+
+`ai.provider` accepts `"openai"`, `"anthropic"`, or `"custom"` (any OpenAI-compatible endpoint — e.g. a self-hosted Qwen deployment behind vLLM/Ollama — via `ai.baseUrl`).
 
 ## Usage
 
@@ -142,11 +148,30 @@ Create a configuration file (`di.config.json`) in your Flutter project root:
 
 ### Programmatic API
 
+The simplest way to drive the full flow is `Pipeline`, which orchestrates every step below and emits `CoreEvent`s (`progress`, `design.compiled`, `project.analyzed`, `plan.generated`, `widget.generated`, `validation.completed`, `integration.completed`) as it goes — this is what the VS Code extension itself uses:
+
+```typescript
+import { ConfigLoader, Pipeline } from '@design-intelligence/core';
+
+const config = new ConfigLoader().loadFromFile('di.config.json');
+const pipeline = new Pipeline(config);
+pipeline.on(event => console.log(event.type, event));
+
+const designGraph = await pipeline.importFigmaFile(figmaFileKey);
+const projectGraph = await pipeline.analyzeProject();
+const plan = await pipeline.generatePlan();
+const results = await pipeline.generateUI();
+await pipeline.integrateFiles(results.filter(r => r.success).map(r => ({ filePath: r.filePath, content: r.content! })));
+```
+
+For finer-grained control, each step is its own class:
+
 ```typescript
 import { 
   ConfigLoader, 
   FigmaClient, 
   DesignCompiler, 
+  ComponentDiscoveryEngine,
   FlutterAnalyzer, 
   PlanningEngine, 
   UIAgent, 
@@ -161,6 +186,9 @@ const config = new ConfigLoader({ /* ... */ }).getConfig();
 const figmaClient = new FigmaClient(config.figma.accessToken, cache, logger);
 const compiler = new DesignCompiler(figmaClient);
 const designGraph = await compiler.compile(fileKey);
+
+// 2b. Detect repeated UI patterns that aren't formal Figma components
+designGraph.discoveredPatterns = new ComponentDiscoveryEngine().discover(designGraph);
 
 // 3. Analyze Flutter project
 const analyzer = new FlutterAnalyzer(projectPath);
@@ -188,15 +216,17 @@ await integrator.integrateGeneratedFiles(filesToWrite);
 | Phase | Component | Description | Status |
 |-------|-----------|-------------|--------|
 | 1 | Core Foundation | TypeScript monorepo, types, config, logging, caching | ✅ Complete |
-| 2 | OAuth Management | Figma authentication, token refresh, secure storage | ✅ Complete |
+| 2 | OAuth Management | Figma authentication, token refresh, AES-256-GCM secret storage | ✅ Complete |
 | 3 | Design Compiler | Figma API client & Design Graph compilation | ✅ Complete |
-| 4 | Flutter Analyzer | Project scanning, widget/theme/routing detection | ✅ Complete |
-| 5 | Planning Engine | Graph comparison, semantic matching, task generation | ✅ Complete |
-| 6 | UI Agent | LLM-based Flutter UI code generation (stub) | ⚠️ Stub |
-| 7 | Validation | dart format/analyze/flutter analyze integration | ✅ Complete |
-| 8 | Integration | File merging, route registration, asset updates | ✅ Complete |
-| 9 | VS Code Extension | Thin UI layer over core engine | ✅ Complete |
-| 10 | Incremental Sync | Change detection, selective re-compilation | ✅ Complete |
+| 4 | Component Discovery Engine | Deterministic detection of repeated UI patterns not formalized as Figma components | ✅ Complete |
+| 5 | Flutter Analyzer | Project scanning, widget/theme/routing detection, real Bloc/Riverpod/MVVM architecture reasoning | ✅ Complete |
+| 6 | Planning Engine | Graph comparison, semantic matching, task generation (including discovered patterns) | ✅ Complete |
+| 7 | UI Agent | LLM-based Flutter UI code generation — pluggable Anthropic/OpenAI/custom providers | ✅ Complete |
+| 8 | Validation | dart format/analyze/flutter analyze integration, with real per-file line/column reporting | ✅ Complete |
+| 9 | Integration | File merging, route registration, asset updates | ✅ Complete |
+| 10 | Pipeline | Orchestrates the full flow end-to-end and emits progress/completion events | ✅ Complete |
+| 11 | VS Code Extension | Thin UI layer over the Pipeline, with VS Code `SecretStorage`-backed credentials | ✅ Complete |
+| 12 | Incremental Sync | Change detection, selective re-compilation | ✅ Complete |
 
 ## Design Graph Schema
 
@@ -255,6 +285,14 @@ The UI Agent generates only Flutter UI code and:
 - Business logic
 - Test files
 
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for local setup, project conventions, and what to check before opening a PR.
+
+## Security
+
+See [SECURITY.md](./SECURITY.md) for how API keys and tokens are handled, and how to report a vulnerability.
+
 ## License
 
-MIT
+[MIT](./LICENSE)
